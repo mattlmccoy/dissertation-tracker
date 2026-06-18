@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RFAM Dissertation Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,900&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#15120e; --ink2:#1d1813; --panel:#221c15; --panel2:#2a2319;
+    --paper:#ece4d5; --paper-dim:#bcae98; --muted:#8d8270; --line:rgba(236,228,213,.10);
+    --amber:#e0a050; --ember:#d2603a; --teal:#62b89a; --violet:#9a86c4; --sky:#6aa6c4;
+    --p0:#d2603a; --p1:#e0a050; --p2:#8d8270;
+    --shadow:0 18px 50px -20px rgba(0,0,0,.7);
+    --radius:14px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:
+      radial-gradient(1200px 700px at 85% -10%, rgba(224,160,80,.10), transparent 60%),
+      radial-gradient(1000px 600px at -10% 110%, rgba(98,184,154,.07), transparent 55%),
+      var(--ink);
+    color:var(--paper); font-family:"Public Sans",system-ui,sans-serif;
+    line-height:1.5; min-height:100vh; -webkit-font-smoothing:antialiased;
+    letter-spacing:.005em;
+  }
+  body::before{ /* grain */
+    content:""; position:fixed; inset:0; pointer-events:none; z-index:1; opacity:.04;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .wrap{max-width:1080px; margin:0 auto; padding:34px 26px 90px; position:relative; z-index:2}
+
+  /* ---------- header ---------- */
+  header.top{display:flex; justify-content:space-between; align-items:flex-end; gap:24px; flex-wrap:wrap; border-bottom:1px solid var(--line); padding-bottom:22px}
+  .brand .kicker{font-family:"IBM Plex Mono",monospace; font-size:11px; letter-spacing:.32em; text-transform:uppercase; color:var(--amber); margin-bottom:8px}
+  .brand h1{font-family:"Fraunces",serif; font-weight:600; font-size:clamp(28px,4vw,44px); line-height:1.0; letter-spacing:-.01em}
+  .brand h1 em{font-style:italic; color:var(--paper-dim); font-weight:400}
+  .countdown{text-align:right; flex-shrink:0}
+  .countdown .num{font-family:"Fraunces",serif; font-weight:900; font-size:clamp(40px,7vw,68px); line-height:.85; color:var(--paper); letter-spacing:-.02em}
+  .countdown .num.warn{color:var(--ember)}
+  .countdown .lbl{font-family:"IBM Plex Mono",monospace; font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--muted); margin-top:8px}
+  .countdown .lbl b{color:var(--paper-dim); font-weight:500}
+
+  /* ---------- toolbar ---------- */
+  .toolbar{display:flex; align-items:center; gap:10px; margin:24px 0 18px; flex-wrap:wrap}
+  .tabs{display:flex; gap:4px; background:var(--ink2); border:1px solid var(--line); border-radius:11px; padding:4px}
+  .tab{font-family:"IBM Plex Mono",monospace; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); background:none; border:0; padding:8px 15px; border-radius:8px; cursor:pointer; transition:.18s}
+  .tab:hover{color:var(--paper)}
+  .tab.active{background:var(--panel2); color:var(--amber); box-shadow:inset 0 0 0 1px var(--line)}
+  .spacer{flex:1}
+  .btn{font-family:"IBM Plex Mono",monospace; font-size:12px; letter-spacing:.04em; color:var(--paper); background:var(--panel); border:1px solid var(--line); padding:9px 14px; border-radius:9px; cursor:pointer; transition:.18s; display:inline-flex; align-items:center; gap:7px}
+  .btn:hover{border-color:rgba(236,228,213,.28); background:var(--panel2)}
+  .btn.primary{background:linear-gradient(180deg,var(--amber),#c98a3c); color:#241a0c; border-color:transparent; font-weight:600}
+  .btn.primary:hover{filter:brightness(1.07)}
+  .btn .dot{width:7px;height:7px;border-radius:50%;background:var(--teal)}
+  .btn .dot.dirty{background:var(--ember); box-shadow:0 0 8px var(--ember)}
+  .btn:disabled{opacity:.4; cursor:default}
+
+  /* ---------- progress strip ---------- */
+  .progress{display:flex; gap:14px; flex-wrap:wrap; margin-bottom:26px}
+  .pcard{flex:1; min-width:150px; background:linear-gradient(180deg,var(--panel),var(--ink2)); border:1px solid var(--line); border-radius:var(--radius); padding:15px 16px; position:relative; overflow:hidden}
+  .pcard .ph{font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--paper-dim); display:flex; align-items:center; gap:7px}
+  .pcard .ph i{width:9px;height:9px;border-radius:3px;display:inline-block}
+  .pcard .frac{font-family:"Fraunces",serif; font-size:26px; font-weight:600; margin:8px 0 9px}
+  .pcard .frac span{font-size:14px; color:var(--muted)}
+  .bar{height:5px; border-radius:3px; background:rgba(236,228,213,.08); overflow:hidden}
+  .bar i{display:block; height:100%; border-radius:3px; transition:width .5s cubic-bezier(.2,.7,.2,1)}
+
+  /* ---------- task list ---------- */
+  .group{margin-bottom:30px}
+  .group > h2{font-family:"Fraunces",serif; font-weight:500; font-size:19px; letter-spacing:-.01em; margin-bottom:13px; display:flex; align-items:center; gap:10px; color:var(--paper)}
+  .group > h2 i{width:11px;height:11px;border-radius:3px}
+  .group > h2 .cnt{font-family:"IBM Plex Mono",monospace; font-size:12px; color:var(--muted); font-weight:400}
+  .empty{color:var(--muted); font-style:italic; padding:18px 4px; font-family:"Fraunces",serif}
+
+  .task{display:flex; gap:14px; align-items:flex-start; background:var(--panel); border:1px solid var(--line); border-left:3px solid var(--lc,var(--muted)); border-radius:11px; padding:14px 16px; margin-bottom:9px; cursor:pointer; transition:.16s; position:relative}
+  .task:hover{background:var(--panel2); transform:translateX(2px)}
+  .task.done{opacity:.55}
+  .check{flex-shrink:0; width:21px; height:21px; border-radius:7px; border:1.5px solid var(--paper-dim); margin-top:2px; cursor:pointer; display:grid; place-items:center; transition:.16s; background:transparent}
+  .check:hover{border-color:var(--teal)}
+  .check.on{background:var(--teal); border-color:var(--teal)}
+  .check.on::after{content:"✓"; color:#142019; font-size:13px; font-weight:700}
+  .tbody{flex:1; min-width:0}
+  .ttitle{font-size:15px; font-weight:500; color:var(--paper)}
+  .task.done .ttitle{text-decoration:line-through; text-decoration-color:var(--muted)}
+  .tmeta{display:flex; gap:8px; flex-wrap:wrap; margin-top:7px; align-items:center}
+  .chip{font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:.04em; padding:2.5px 8px; border-radius:20px; border:1px solid var(--line); color:var(--paper-dim)}
+  .chip.prio{font-weight:600}
+  .chip.due{color:var(--paper-dim)} .chip.due.over{color:var(--ember); border-color:rgba(210,96,58,.4)}
+  .chip.status[data-s="active"]{color:var(--amber); border-color:rgba(224,160,80,.35)}
+  .chip.status[data-s="blocked"]{color:var(--ember); border-color:rgba(210,96,58,.35)}
+  .chip.status[data-s="done"]{color:var(--teal); border-color:rgba(98,184,154,.35)}
+  .chip.cad{color:var(--sky)}
+  .tnote{font-size:13px; color:var(--muted); margin-top:8px; line-height:1.45}
+
+  /* ---------- modal ---------- */
+  .scrim{position:fixed; inset:0; background:rgba(10,8,5,.66); backdrop-filter:blur(3px); z-index:50; display:none; align-items:flex-start; justify-content:center; padding:7vh 18px}
+  .scrim.on{display:flex}
+  .modal{background:var(--ink2); border:1px solid var(--line); border-radius:18px; box-shadow:var(--shadow); width:min(560px,100%); padding:26px; animation:rise .25s cubic-bezier(.2,.7,.2,1)}
+  @keyframes rise{from{opacity:0; transform:translateY(14px)}to{opacity:1;transform:none}}
+  .modal h3{font-family:"Fraunces",serif; font-weight:600; font-size:21px; margin-bottom:18px}
+  .field{margin-bottom:14px}
+  .field label{display:block; font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin-bottom:6px}
+  .field input,.field select,.field textarea{width:100%; background:var(--ink); border:1px solid var(--line); border-radius:9px; color:var(--paper); padding:10px 12px; font-family:"Public Sans",sans-serif; font-size:14px; transition:.16s}
+  .field input:focus,.field select:focus,.field textarea:focus{outline:0; border-color:var(--amber)}
+  .field textarea{resize:vertical; min-height:62px; line-height:1.45}
+  .row2{display:flex; gap:12px} .row2 .field{flex:1}
+  .modal-actions{display:flex; gap:10px; justify-content:space-between; margin-top:22px; align-items:center}
+  .modal-actions .right{display:flex; gap:10px}
+  .link{background:none;border:0;color:var(--muted);font-family:"IBM Plex Mono",monospace;font-size:12px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+  .link.danger{color:var(--ember)}
+  .note{font-size:12px; color:var(--muted); line-height:1.5; background:rgba(0,0,0,.2); border:1px solid var(--line); border-radius:9px; padding:11px 13px; margin-top:4px}
+  .note b{color:var(--paper-dim)}
+  .sync-state{font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--muted)}
+  footer{margin-top:46px; padding-top:20px; border-top:1px solid var(--line); font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--muted); display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px}
+  footer a{color:var(--paper-dim)}
+  .toast{position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(80px); background:var(--panel2); border:1px solid var(--line); color:var(--paper); padding:12px 20px; border-radius:11px; font-family:"IBM Plex Mono",monospace; font-size:13px; z-index:80; transition:.3s; box-shadow:var(--shadow)}
+  .toast.on{transform:translateX(-50%) translateY(0)}
+  .toast.err{border-color:var(--ember); color:#f2c3b2}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <div class="kicker">RFAM &middot; Georgia Tech ME</div>
+      <h1>Dissertation <em>Mission Control</em></h1>
+    </div>
+    <div class="countdown">
+      <div class="num" id="cdNum">—</div>
+      <div class="lbl">days to defense &middot; <b id="cdDate">—</b></div>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <div class="tabs" id="tabs">
+      <button class="tab active" data-view="today">Today</button>
+      <button class="tab" data-view="week">This Week</button>
+      <button class="tab" data-view="board">Board</button>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn" id="addBtn">+ Task</button>
+    <button class="btn" id="syncBtn"><span class="dot" id="syncDot"></span><span id="syncLbl">Sync</span></button>
+    <button class="btn" id="gearBtn" title="GitHub settings">&#9881;</button>
+  </div>
+
+  <div class="progress" id="progress"></div>
+  <div id="list"></div>
+
+  <footer>
+    <span>Public app shell &middot; task data in private repo &middot; token stays in your browser</span>
+    <span id="updatedAt">—</span>
+  </footer>
+</div>
+
+<!-- task editor -->
+<div class="scrim" id="taskScrim">
+  <div class="modal">
+    <h3 id="taskModalTitle">Edit Task</h3>
+    <div class="field"><label>Title</label><input id="f-title" type="text" placeholder="What needs doing?"></div>
+    <div class="row2">
+      <div class="field"><label>Phase</label><select id="f-phase"></select></div>
+      <div class="field"><label>Priority</label>
+        <select id="f-priority"><option>P0</option><option>P1</option><option>P2</option></select></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Status</label>
+        <select id="f-status"><option value="todo">To do</option><option value="active">Active</option><option value="blocked">Blocked</option><option value="done">Done</option></select></div>
+      <div class="field"><label>Cadence</label>
+        <select id="f-cadence"><option value="once">Once</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select></div>
+    </div>
+    <div class="field"><label>Due (optional)</label><input id="f-due" type="date"></div>
+    <div class="field"><label>Notes</label><textarea id="f-notes" placeholder="Context, blockers, links…"></textarea></div>
+    <div class="modal-actions">
+      <button class="link danger" id="deleteBtn">Delete</button>
+      <div class="right">
+        <button class="link" id="taskCancel">Cancel</button>
+        <button class="btn primary" id="taskSave">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- settings -->
+<div class="scrim" id="setScrim">
+  <div class="modal">
+    <h3>GitHub Sync</h3>
+    <div class="field"><label>Fine-grained personal access token</label><input id="f-token" type="password" placeholder="github_pat_…"></div>
+    <div class="note">
+      Create a <b>fine-grained PAT</b> at GitHub → Settings → Developer settings, scoped to
+      <b>only</b> the <b>dissertation-tracker-data</b> repository, with <b>Contents: Read &amp; write</b>.
+      It is stored only in this browser's <b>localStorage</b> and sent only to api.github.com — it is
+      never committed and the tracker has no server.
+    </div>
+    <div class="field" style="margin-top:14px"><label>Data repo (owner / repo / path)</label>
+      <input id="f-repo" type="text" placeholder="owner/repo/path.json"></div>
+    <div class="modal-actions">
+      <span class="sync-state" id="setState">not connected</span>
+      <div class="right">
+        <button class="link danger" id="tokenClear">Clear token</button>
+        <button class="link" id="setCancel">Close</button>
+        <button class="btn primary" id="setSave">Save &amp; Pull</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================ config & state ============================ */
+const DEFAULT_REPO = "mattlmccoy/dissertation-tracker-data/tasks.json";
+const LS_TOKEN = "rfam_tracker_pat";
+const LS_REPO  = "rfam_tracker_repo";
+const LS_CACHE = "rfam_tracker_cache";
+const PHASE_COLORS = {
+  "DoE & Validation":"#e0a050","Papers":"#9a86c4","Novelty":"#62b89a",
+  "Lab & Experiments":"#6aa6c4","Dissertation":"#d2603a"
+};
+const PRIO_COLORS = {P0:"var(--p0)",P1:"var(--p1)",P2:"var(--p2)"};
+
+// Embedded seed — shown before a token/pull provides the private data.
+const SEED = {
+  meta:{title:"RFAM Dissertation Tracker",defenseDate:"2026-10-15",updated:"2026-06-18",
+    phases:["DoE & Validation","Papers","Novelty","Lab & Experiments","Dissertation"]},
+  tasks:[
+    {id:"val-hardening",title:"Apply adversary hardening edits to ch_validation",phase:"DoE & Validation",priority:"P1",status:"active",cadence:"once",due:"2026-06-20",notes:"Conditional power, IPA mechanism, DSD caveat, emissivity flag, grey→gray/wt% fixes."},
+    {id:"val-compile",title:"Overleaf compile: confirm Ch 11 pagination",phase:"DoE & Validation",priority:"P1",status:"todo",cadence:"once",due:"2026-06-22",notes:"The one check that can't be done locally."},
+    {id:"paper-ab",title:"Draft merged model+compensation paper (HEATR+FGM)",phase:"Papers",priority:"P1",status:"todo",cadence:"once",due:"2026-08-01",notes:"Target: Additive Manufacturing. Highest-leverage first paper."},
+    {id:"nov-edits",title:"4 novelty-hardening edits",phase:"Novelty",priority:"P1",status:"todo",cadence:"once",due:"2026-06-25",notes:"Relative-reduction wording; Intro delta; deployed→designed; fig fix."},
+    {id:"vna",title:"Tier 3 VNA: characterize deployed ink at 13.56 & 27.12 MHz",phase:"Lab & Experiments",priority:"P0",status:"todo",cadence:"once",due:null,notes:"Highest-leverage measurement; unlocks HEATR re-baseline. Rig-independent."},
+    {id:"writing-daily",title:"Daily dissertation/paper writing block",phase:"Dissertation",priority:"P1",status:"todo",cadence:"daily",due:null,notes:"Recurring focus block."}
+  ]
+};
+
+let DB = null;       // {meta, tasks}
+let SHA = null;      // remote file sha (for safe writes)
+let DIRTY = false;   // unsaved local changes vs remote
+let VIEW = "today";
+let editingId = null;
+
+/* ============================ utils ============================ */
+const $ = s => document.querySelector(s);
+const token = () => localStorage.getItem(LS_TOKEN) || "";
+const repoCfg = () => (localStorage.getItem(LS_REPO) || DEFAULT_REPO);
+function repoParts(){ const p = repoCfg().split("/"); return {owner:p[0],repo:p[1],path:p.slice(2).join("/")||"tasks.json"}; }
+const todayStr = () => new Date().toISOString().slice(0,10);
+function daysBetween(a,b){ return Math.round((new Date(b)-new Date(a))/86400000); }
+function b64e(str){ return btoa(unescape(encodeURIComponent(str))); }
+function b64d(b64){ return decodeURIComponent(escape(atob(b64.replace(/\n/g,"")))); }
+function uid(){ return "t"+Math.random().toString(36).slice(2,8); }
+let toastTimer;
+function toast(msg,err){ const t=$("#toast"); t.textContent=msg; t.className="toast on"+(err?" err":""); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.className="toast",2600); }
+
+function saveCache(){ localStorage.setItem(LS_CACHE, JSON.stringify(DB)); }
+function markDirty(){ DIRTY=true; DB.meta.updated=todayStr(); saveCache(); renderSync(); $("#updatedAt").textContent="edited "+DB.meta.updated+" · unsynced"; }
+
+/* ============================ GitHub I/O ============================ */
+async function ghPull(){
+  if(!token()) { toast("Add a token in settings to sync",true); return false; }
+  const {owner,repo,path}=repoParts();
+  const r = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`,
+    {headers:{Authorization:"Bearer "+token(),Accept:"application/vnd.github+json"}});
+  if(r.status===404){ toast("tasks.json not found in data repo — push to create it"); return false; }
+  if(!r.ok){ toast("Pull failed: "+r.status+" "+r.statusText,true); return false; }
+  const j = await r.json(); SHA=j.sha;
+  DB = JSON.parse(b64d(j.content)); DIRTY=false; saveCache();
+  render(); renderSync(); toast("Pulled latest from GitHub");
+  $("#updatedAt").textContent="synced "+(DB.meta.updated||todayStr());
+  return true;
+}
+async function ghPush(){
+  if(!token()) { openSettings(); return; }
+  const {owner,repo,path}=repoParts();
+  DB.meta.updated=todayStr();
+  const body={message:"tracker update "+new Date().toISOString(),content:b64e(JSON.stringify(DB,null,2)+"\n")};
+  if(SHA) body.sha=SHA;
+  const r = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`,
+    {method:"PUT",headers:{Authorization:"Bearer "+token(),Accept:"application/vnd.github+json"},body:JSON.stringify(body)});
+  if(r.status===409){ toast("Conflict — pull first, then push",true); return; }
+  if(!r.ok){ toast("Push failed: "+r.status+" "+r.statusText,true); return; }
+  const j=await r.json(); SHA=j.content.sha; DIRTY=false; saveCache(); renderSync();
+  $("#updatedAt").textContent="synced "+DB.meta.updated; toast("Pushed to GitHub");
+}
+
+/* ============================ rendering ============================ */
+function renderCountdown(){
+  const d=DB.meta.defenseDate; if(!d){return;}
+  const n=daysBetween(todayStr(),d);
+  $("#cdNum").textContent=n; $("#cdNum").classList.toggle("warn",n<60);
+  $("#cdDate").textContent=new Date(d+"T00:00:00").toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"});
+}
+function renderSync(){
+  $("#syncDot").className="dot"+(DIRTY?" dirty":"");
+  $("#syncLbl").textContent=DIRTY?"Push*":"Sync";
+}
+function statusOf(t){ return t.status||"todo"; }
+function isToday(t){
+  if(statusOf(t)==="done") return false;
+  if(t.cadence==="daily"||t.cadence==="weekly") return true;
+  if(statusOf(t)==="active") return true;
+  if(t.due && daysBetween(todayStr(),t.due)<=0) return true; // due today or overdue
+  return false;
+}
+function isThisWeek(t){
+  if(statusOf(t)==="done") return false;
+  if(statusOf(t)==="active"||t.cadence==="daily"||t.cadence==="weekly") return true;
+  if(t.due){ const dd=daysBetween(todayStr(),t.due); return dd<=7; }
+  return false;
+}
+function renderProgress(){
+  const box=$("#progress"); box.innerHTML="";
+  DB.meta.phases.forEach(ph=>{
+    const ts=DB.tasks.filter(t=>t.phase===ph);
+    if(!ts.length) return;
+    const done=ts.filter(t=>statusOf(t)==="done").length;
+    const pct=Math.round(done/ts.length*100);
+    const c=PHASE_COLORS[ph]||"#8d8270";
+    const el=document.createElement("div"); el.className="pcard";
+    el.innerHTML=`<div class="ph"><i style="background:${c}"></i>${ph}</div>
+      <div class="frac">${done}<span>/${ts.length}</span></div>
+      <div class="bar"><i style="width:${pct}%;background:${c}"></i></div>`;
+    box.appendChild(el);
+  });
+}
+function chip(cls,txt,extra=""){ return `<span class="chip ${cls}" ${extra}>${txt}</span>`; }
+function taskCard(t){
+  const c=PHASE_COLORS[t.phase]||"#8d8270";
+  const done=statusOf(t)==="done";
+  let due="";
+  if(t.due){ const over=daysBetween(todayStr(),t.due)<0 && !done; due=chip("due"+(over?" over":""),"⌑ "+t.due); }
+  const cad=(t.cadence&&t.cadence!=="once")?chip("cad","↻ "+t.cadence):"";
+  const st=(statusOf(t)!=="todo")?chip("status",statusOf(t),`data-s="${statusOf(t)}"`):"";
+  return `<div class="task ${done?"done":""}" data-id="${t.id}" style="--lc:${PRIO_COLORS[t.priority]||"#8d8270"}">
+    <div class="check ${done?"on":""}" data-check="${t.id}"></div>
+    <div class="tbody">
+      <div class="ttitle">${esc(t.title)}</div>
+      <div class="tmeta">
+        <span class="chip prio" style="color:${PRIO_COLORS[t.priority]||"#8d8270"}">${t.priority||"P2"}</span>
+        ${st}${due}${cad}
+        <span class="chip" style="color:${c}">${t.phase}</span>
+      </div>
+      ${t.notes?`<div class="tnote">${esc(t.notes)}</div>`:""}
+    </div></div>`;
+}
+function esc(s){ return (s||"").replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[m])); }
+
+function render(){
+  renderCountdown(); renderProgress();
+  const list=$("#list"); list.innerHTML="";
+  const prioOrder={P0:0,P1:1,P2:2};
+  const sortFn=(a,b)=>(prioOrder[a.priority]??3)-(prioOrder[b.priority]??3) || ((a.due||"9999")<(b.due||"9999")?-1:1);
+
+  if(VIEW==="board"){
+    DB.meta.phases.forEach(ph=>{
+      const ts=DB.tasks.filter(t=>t.phase===ph).sort(sortFn);
+      if(!ts.length) return;
+      const c=PHASE_COLORS[ph]||"#8d8270";
+      const done=ts.filter(t=>statusOf(t)==="done").length;
+      const g=document.createElement("div"); g.className="group";
+      g.innerHTML=`<h2><i style="background:${c}"></i>${ph} <span class="cnt">${done}/${ts.length}</span></h2>`+
+        ts.map(taskCard).join("");
+      list.appendChild(g);
+    });
+  } else {
+    const filt=VIEW==="today"?isToday:isThisWeek;
+    const ts=DB.tasks.filter(filt).sort(sortFn);
+    const g=document.createElement("div"); g.className="group";
+    const label=VIEW==="today"?"In focus today":"Due / active this week";
+    g.innerHTML=`<h2>${label} <span class="cnt">${ts.length}</span></h2>`+
+      (ts.length?ts.map(taskCard).join(""):`<div class="empty">Nothing here. Switch to the Board to see everything, or add a task.</div>`);
+    list.appendChild(g);
+  }
+}
+
+/* ============================ interactions ============================ */
+$("#tabs").addEventListener("click",e=>{
+  const b=e.target.closest(".tab"); if(!b)return;
+  VIEW=b.dataset.view;
+  document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active",t===b));
+  render();
+});
+$("#list").addEventListener("click",e=>{
+  const chk=e.target.closest("[data-check]");
+  if(chk){ e.stopPropagation(); const t=DB.tasks.find(x=>x.id===chk.dataset.check);
+    t.status=(statusOf(t)==="done")?"todo":"done"; markDirty(); render(); return; }
+  const card=e.target.closest(".task"); if(card) openEditor(card.dataset.id);
+});
+
+function openEditor(id){
+  editingId=id||null;
+  const t=id?DB.tasks.find(x=>x.id===id):{phase:DB.meta.phases[0],priority:"P1",status:"todo",cadence:"once"};
+  $("#taskModalTitle").textContent=id?"Edit Task":"New Task";
+  const ph=$("#f-phase"); ph.innerHTML=DB.meta.phases.map(p=>`<option>${p}</option>`).join("");
+  $("#f-title").value=t.title||""; ph.value=t.phase; $("#f-priority").value=t.priority||"P1";
+  $("#f-status").value=t.status||"todo"; $("#f-cadence").value=t.cadence||"once";
+  $("#f-due").value=t.due||""; $("#f-notes").value=t.notes||"";
+  $("#deleteBtn").style.display=id?"block":"none";
+  $("#taskScrim").classList.add("on"); $("#f-title").focus();
+}
+function closeEditor(){ $("#taskScrim").classList.remove("on"); }
+$("#addBtn").onclick=()=>openEditor(null);
+$("#taskCancel").onclick=closeEditor;
+$("#taskScrim").addEventListener("click",e=>{ if(e.target.id==="taskScrim") closeEditor(); });
+$("#taskSave").onclick=()=>{
+  const data={title:$("#f-title").value.trim(),phase:$("#f-phase").value,priority:$("#f-priority").value,
+    status:$("#f-status").value,cadence:$("#f-cadence").value,due:$("#f-due").value||null,notes:$("#f-notes").value.trim()};
+  if(!data.title){ toast("Title required",true); return; }
+  if(editingId){ Object.assign(DB.tasks.find(x=>x.id===editingId),data); }
+  else { DB.tasks.unshift({id:uid(),...data}); }
+  markDirty(); render(); closeEditor();
+};
+$("#deleteBtn").onclick=()=>{
+  if(editingId && confirm("Delete this task?")){ DB.tasks=DB.tasks.filter(x=>x.id!==editingId); markDirty(); render(); closeEditor(); }
+};
+
+/* settings */
+function openSettings(){
+  $("#f-token").value=token(); $("#f-repo").value=repoCfg();
+  $("#setState").textContent=token()?"token present in this browser":"not connected";
+  $("#setScrim").classList.add("on");
+}
+$("#gearBtn").onclick=openSettings;
+$("#setCancel").onclick=()=>$("#setScrim").classList.remove("on");
+$("#setScrim").addEventListener("click",e=>{ if(e.target.id==="setScrim") $("#setScrim").classList.remove("on"); });
+$("#tokenClear").onclick=()=>{ localStorage.removeItem(LS_TOKEN); $("#f-token").value=""; $("#setState").textContent="token cleared"; renderSync(); toast("Token cleared"); };
+$("#setSave").onclick=async()=>{
+  const tok=$("#f-token").value.trim(); const rp=$("#f-repo").value.trim();
+  if(tok) localStorage.setItem(LS_TOKEN,tok); if(rp) localStorage.setItem(LS_REPO,rp);
+  $("#setScrim").classList.remove("on");
+  if(tok){ await ghPull(); } else { toast("Saved (offline / cache only)"); }
+};
+$("#syncBtn").onclick=async()=>{ if(DIRTY){ await ghPush(); } else { await ghPull(); } };
+
+/* keyboard */
+document.addEventListener("keydown",e=>{
+  if(e.key==="Escape"){ closeEditor(); $("#setScrim").classList.remove("on"); }
+  if((e.metaKey||e.ctrlKey)&&e.key==="s"){ e.preventDefault(); if(DIRTY) ghPush(); }
+});
+
+/* ============================ boot ============================ */
+(function boot(){
+  const cached=localStorage.getItem(LS_CACHE);
+  DB = cached?JSON.parse(cached):JSON.parse(JSON.stringify(SEED));
+  if(!DB.meta.phases) DB.meta.phases=SEED.meta.phases;
+  render(); renderSync();
+  $("#updatedAt").textContent=cached?("local · "+(DB.meta.updated||"")):"seed data";
+  if(token()) ghPull();  // refresh from private repo if connected
+})();
+</script>
+</body>
+</html>
