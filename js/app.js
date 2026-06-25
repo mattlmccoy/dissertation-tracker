@@ -343,8 +343,41 @@ function renderPatch(patch){
     }).join('') + `</div>`;
 }
 
+// ---------- global search (across the dissertation) ----------
+let searchIndex = null;
+async function loadIndex(){
+  if (searchIndex) return searchIndex;
+  const dev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  if (dev){ try { const r = await fetch('./search_index.json'); if (r.ok){ searchIndex = await r.json(); return searchIndex; } } catch(e){} }
+  const t = tok(); if (!t) return null;
+  try { const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/search_index.json`,
+      { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' } });
+    searchIndex = await r.json(); return searchIndex; } catch(e){ return null; }
+}
+async function globalSearch(q){
+  if (!q.trim()) return;
+  const idx = await loadIndex(); if (!idx){ flash('Global search needs your access token.'); return; }
+  const ql = q.toLowerCase(), hits = [];
+  for (const [ch, secs] of Object.entries(idx)) for (const s of secs)
+    if ((s.h + ' ' + s.t).toLowerCase().includes(ql)) hits.push({ ch, h:s.h, snip: s.h + ' — ' + s.t });
+  showSearchResults(q, hits.slice(0, 60));
+}
+function showSearchResults(q, hits){
+  document.getElementById('searchpanel')?.remove();
+  const p = document.createElement('div'); p.id = 'searchpanel';
+  p.style.cssText = 'position:absolute;top:52px;left:50%;transform:translateX(-50%);z-index:50;width:min(640px,92%);max-height:72vh;overflow:auto;background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-lg);box-shadow:0 14px 44px rgba(0,0,0,.18);padding:8px';
+  p.innerHTML = `<div style="font-size:11px;color:var(--text-3);padding:6px 10px">${hits.length} result${hits.length!==1?'s':''} across the dissertation for "${escapeHtml(q)}"</div>` +
+    (hits.length ? hits.map(h => `<div class="sres" data-ch="${h.ch}" data-h="${escapeHtml(h.h)}" style="padding:9px 10px;border-radius:8px;cursor:pointer">
+        <div style="font-size:12px;font-weight:500">${chMeta(h.ch).n}. ${escapeHtml(shortTitle(chMeta(h.ch).title))} <span style="color:var(--text-3)">· ${escapeHtml(h.h).slice(0,42)}</span></div>
+        <div style="font-size:11.5px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(h.snip).slice(0,120)}</div></div>`).join('') : `<div style="padding:10px;color:var(--text-3)">No matches.</div>`);
+  document.body.appendChild(p);
+  p.querySelectorAll('.sres').forEach(el => el.onclick = () => { p.remove(); const h = el.dataset.h; enterChapter(el.dataset.ch);
+    setTimeout(() => { const hh = [...document.querySelectorAll('#doc h2, #doc h3')].find(x => x.textContent.trim() === h); hh?.scrollIntoView({ behavior:'smooth', block:'start' }); }, 1800); });
+  setTimeout(() => document.addEventListener('click', function h(e){ if (!p.contains(e.target)){ p.remove(); document.removeEventListener('click', h); } }), 0);
+}
+
 // ---------- boot ----------
 enterHome();
 document.addEventListener('mouseover', e => { const c = e.target.closest?.('.chcard'); if (c) c.style.borderColor='var(--border-2)'; });
 document.addEventListener('mouseout', e => { const c = e.target.closest?.('.chcard'); if (c) c.style.borderColor='var(--border)'; });
-window.addEventListener('keydown', e => { if ((e.metaKey||e.ctrlKey) && e.key === '\\'){ e.preventDefault(); document.getElementById('search')?.focus(); } });
+window.addEventListener('keydown', e => { if ((e.metaKey||e.ctrlKey) && e.key === '\\'){ e.preventDefault(); const s = document.getElementById('search'); if (s && s.value.trim()) globalSearch(s.value); else s?.focus(); } });
