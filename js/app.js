@@ -28,6 +28,7 @@ const tok = () => localStorage.getItem('ghpat');
 function renderTopbar(){
   const m = chMeta(current);
   document.getElementById('topbar').innerHTML = `
+    <button class="icbtn" id="btn-home" title="All chapters"><i class="ti ti-layout-grid"></i></button>
     <button class="chsel" id="chsel"><i class="ti ti-book-2"></i><span>Chapter ${m.n} · ${shortTitle(m.title)}</span><i class="ti ti-chevron-down" style="font-size:15px;color:var(--text-3)"></i></button>
     <div class="search"><i class="ti ti-search"></i><input id="search" placeholder="Search chapter · ⌘\\ for all"></div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:3px">
@@ -36,6 +37,7 @@ function renderTopbar(){
       <button class="btn btn-primary" id="btn-send"><i class="ti ti-send"></i>Send to Claude</button>
       <button class="icbtn" id="btn-more"><i class="ti ti-dots"></i></button>
     </div>`;
+  document.getElementById('btn-home').onclick = enterHome;
   document.getElementById('chsel').onclick = openChapterMenu;
   document.getElementById('btn-theme').onclick = toggleTheme;
   document.getElementById('btn-send').onclick = sendToClaude;
@@ -55,7 +57,10 @@ function openChapterMenu(){
   document.body.appendChild(menu);
   setTimeout(() => document.addEventListener('click', function h(e){ if (!menu.contains(e.target) && e.target.id!=='chsel'){ menu.remove(); document.removeEventListener('click', h); } }), 0);
 }
-function selectChapter(ch){ current = ch; review = loadLocalReview(ch); renderTopbar(); renderComments(); loadChapter(ch); }
+function enterChapter(ch){ current = ch; review = loadLocalReview(ch); localStorage.setItem('lastChapter', ch);
+  document.getElementById('nav').style.display = ''; document.getElementById('comments').style.display = '';
+  renderTopbar(); renderComments(); loadChapter(ch); }
+const selectChapter = enterChapter;
 function toggleTheme(){ document.documentElement.classList.toggle('dark'); localStorage.setItem('theme', document.documentElement.classList.contains('dark')?'dark':'light'); }
 if (localStorage.getItem('theme') === 'dark') document.documentElement.classList.add('dark');
 
@@ -202,6 +207,58 @@ function flash(msg){ const t = document.createElement('div'); t.textContent = ms
   document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
 function restoreCursor(){ if (review.cursor?.sec){ document.getElementById(review.cursor.sec)?.scrollIntoView(); } }
 
+// ---------- home / chapter library ----------
+const DEFENSE = '2026-10-15';
+const daysToDefense = () => Math.max(0, Math.ceil((new Date(DEFENSE) - new Date()) / 86400000));
+function chapterStats(ch){
+  const r = JSON.parse(localStorage.getItem('review:'+ch) || 'null');
+  return { open: r ? r.comments.filter(c=>c.status==='open').length : 0,
+           merged: r ? r.comments.filter(c=>c.status==='merged').length : 0,
+           total: r ? r.comments.length : 0, frac: r?.cursor?.readFrac || 0 };
+}
+function enterHome(){
+  document.getElementById('nav').style.display = 'none';
+  document.getElementById('comments').style.display = 'none';
+  document.getElementById('topbar').innerHTML =
+    `<strong style="font-size:16px;font-weight:600">Dissertation Reviewer</strong>
+     <span style="margin-left:auto;font-size:12.5px;color:var(--text-2);display:inline-flex;align-items:center;gap:6px"><i class="ti ti-flag"></i>defense in ${daysToDefense()} days</span>
+     <button class="icbtn" id="btn-theme"><i class="ti ti-moon"></i></button>`;
+  document.getElementById('btn-theme').onclick = toggleTheme;
+  read.innerHTML = homeHtml();
+  read.querySelectorAll('[data-ch]').forEach(el => el.onclick = () => enterChapter(el.dataset.ch));
+}
+function homeHtml(){
+  const last = localStorage.getItem('lastChapter');
+  const lm = last && chMeta(last);
+  const lr = last ? JSON.parse(localStorage.getItem('review:'+last) || 'null') : null;
+  const cont = lm ? `<div style="border:.5px solid var(--accent);border-radius:var(--r-lg);padding:14px 16px;margin-bottom:26px;display:flex;align-items:center;gap:14px">
+      <i class="ti ti-player-play" style="font-size:22px;color:var(--accent)"></i>
+      <div style="min-width:0">
+        <div style="font-size:11.5px;color:var(--text-2)">Continue where you left off</div>
+        <div style="font-size:14px;font-weight:500">Chapter ${lm.n} · ${shortTitle(lm.title)}</div>
+        ${lr?.comments?.length ? `<div style="font-size:11.5px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">last comment: "${escapeHtml(lr.comments[lr.comments.length-1].body).slice(0,64)}"</div>` : ''}
+      </div>
+      <button class="btn" data-ch="${last}" style="margin-left:auto;flex-shrink:0">Resume</button></div>` : '';
+  const cards = CHAPTERS.map(c => {
+    const s = chapterStats(c.id); const pct = Math.round(s.frac*100);
+    const done = s.total>0 && s.open===0 && s.merged>0;
+    const bar = done ? 'var(--success)' : 'var(--accent)';
+    const status = done ? `<span style="color:var(--success)">complete</span>` : s.frac>0 ? `${pct}% read` : `not started`;
+    const right = s.open ? `<span style="color:var(--accent)">${s.open} open</span>` : s.merged ? `${s.merged} merged` : `<span style="color:var(--text-3)">—</span>`;
+    return `<div class="chcard" data-ch="${c.id}" style="border:.5px solid var(--border);border-radius:var(--r-lg);padding:14px 15px;cursor:pointer">
+        <div style="font-size:11.5px;color:var(--text-3)">Chapter ${c.n}</div>
+        <div style="font-size:14px;font-weight:500;line-height:1.35;margin:3px 0 11px;min-height:38px">${shortTitle(c.title)}</div>
+        <div style="height:5px;border-radius:4px;background:var(--bg-3);overflow:hidden;margin-bottom:8px"><div style="width:${done?100:pct}%;height:100%;background:${bar}"></div></div>
+        <div style="font-size:11px;color:var(--text-2);display:flex"><span>${status}</span><span style="margin-left:auto">${right}</span></div></div>`;
+  }).join('');
+  return `<div style="max-width:900px;margin:0 auto;padding:28px 24px 90px">
+      ${cont}
+      <div style="font-size:11px;letter-spacing:.06em;color:var(--text-3);margin-bottom:13px">ALL CHAPTERS</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px">${cards}</div></div>`;
+}
+
 // ---------- boot ----------
-renderTopbar(); renderComments(); loadChapter(current);
+enterHome();
+document.addEventListener('mouseover', e => { const c = e.target.closest?.('.chcard'); if (c) c.style.borderColor='var(--border-2)'; });
+document.addEventListener('mouseout', e => { const c = e.target.closest?.('.chcard'); if (c) c.style.borderColor='var(--border)'; });
 window.addEventListener('keydown', e => { if ((e.metaKey||e.ctrlKey) && e.key === '\\'){ e.preventDefault(); document.getElementById('search')?.focus(); } });
