@@ -1,5 +1,6 @@
 import { newReview, addComment } from './model.js';
 import { anchorFromSelection } from './anchor.js';
+import { reviewPath, mergeReview, getJson, putJson } from './gh.js';
 
 const DATA_REPO = 'mattlmccoy/dissertation-tracker-data';
 const CHAPTERS = [
@@ -23,6 +24,21 @@ let review = loadLocalReview(current);
 function loadLocalReview(ch){ return JSON.parse(localStorage.getItem('review:'+ch) || 'null') || newReview(ch, ''); }
 const save = () => localStorage.setItem('review:'+current, JSON.stringify(review));
 const tok = () => localStorage.getItem('ghpat');
+
+// ---------- GitHub review sync (private data repo) ----------
+let reviewSha = null, syncTimer = null;
+async function syncDown(){
+  const t = tok(); if (!t) return;
+  try { const { json, sha } = await getJson(t, reviewPath(current)); reviewSha = sha;
+    if (json){ review = mergeReview(review, json); save(); renderComments(); if (document.getElementById('doc')) buildNav(); } }
+  catch(e){ /* offline / first time */ }
+}
+function syncUpSoon(){ if (!tok()) return; clearTimeout(syncTimer); syncTimer = setTimeout(syncUp, 1200); }
+async function syncUp(){
+  const t = tok(); if (!t) return;
+  try { const { sha } = await getJson(t, reviewPath(current)); reviewSha = await putJson(t, reviewPath(current), review, sha || reviewSha, 'review: '+current); }
+  catch(e){ /* retried on next change */ }
+}
 
 // ---------- top bar ----------
 function renderTopbar(){
@@ -91,6 +107,7 @@ function renderDoc(fragment){
   runKatex(document.getElementById('doc'));
   buildNav();
   restoreCursor();
+  syncDown();
 }
 function runKatex(el){
   if (!window.katex){ setTimeout(() => runKatex(el), 100); return; }
@@ -157,7 +174,7 @@ function showPopover(anchor, rects){
   pop.querySelector('#cbody').focus();
   pop.querySelector('#ccancel').onclick = () => { pop.remove(); window.getSelection().removeAllRanges(); };
   pop.querySelector('#csave').onclick = () => {
-    review = addComment(review, { anchor:pending, tag, body:pop.querySelector('#cbody').value }); save();
+    review = addComment(review, { anchor:pending, tag, body:pop.querySelector('#cbody').value }); save(); syncUpSoon();
     renderComments(); buildNav(); pop.remove(); window.getSelection().removeAllRanges();
   };
 }
@@ -196,11 +213,20 @@ function runSearch(q){ clearSearch(); if (!q.trim()) return; const re = new RegE
 function clearSearch(){ document.querySelectorAll('#doc mark').forEach(m => m.replaceWith(...m.childNodes)); }
 
 // ---------- send to claude / cursor ----------
-function sendToClaude(){
+async function sendToClaude(){
   const open = review.comments.filter(c => c.status === 'open');
   if (!open.length){ flash('No open comments to send.'); return; }
-  flash(`Queued ${open.length} comment${open.length>1?'s':''} for Claude → review-edits/${current}`);
-  // (P2/P3: writes a job to jobs.json in the data repo via PAT.)
+  const t = tok(); if (!t){ flash('Add your access token first (click a chapter → connect).'); return; }
+  flash('Sending…');
+  try {
+    await syncUp();                                   // make sure the comments are on GitHub first
+    const { json, sha } = await getJson(t, 'jobs.json');
+    const jobs = Array.isArray(json) ? json : [];
+    jobs.push({ id:'j_'+Date.now().toString(36), type:'apply-edits', chapter:current,
+      comment_ids: open.map(c => c.id), status:'queued', requested_ts:new Date().toISOString() });
+    await putJson(t, 'jobs.json', jobs, sha, 'review: queue '+current);
+    flash(`Queued ${open.length} comment${open.length>1?'s':''} → review-edits/${current}`);
+  } catch(e){ flash('Send failed: '+e.message); }
 }
 function flash(msg){ const t = document.createElement('div'); t.textContent = msg;
   t.style.cssText = 'position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:9px 16px;border-radius:20px;font-size:13px;z-index:60;box-shadow:0 6px 20px rgba(0,0,0,.2)';
