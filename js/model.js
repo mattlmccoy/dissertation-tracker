@@ -4,7 +4,7 @@ export const newReview = (chapter, builtFrom) =>
   ({ chapter, built_from_commit: builtFrom, synctex_present:false, cursor:null, comments:[] });
 export const addComment = (r, c) => ({ ...r, comments:[...r.comments, {
   id: nid(), page:c.page, kind:c.kind||'text',
-  anchor:{ quote:c.anchor?.quote||'', synctex:c.anchor?.synctex||null, rects:c.anchor?.rects||[], confirmed:!!c.anchor?.confirmed },
+  anchor:{ quote:c.anchor?.quote||'', synctex:c.anchor?.synctex||null, rects:c.anchor?.rects||[], section:c.anchor?.section||'', confirmed:!!c.anchor?.confirmed },
   tag:c.tag||'other', body:c.body||'', status:'open',
   claude:{ branch:null, commit:null, response:null, resolved_line:null, ts:null },
   created_ts:new Date().toISOString() }] });

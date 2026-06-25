@@ -26,8 +26,20 @@ button:hover{background:var(--bg-2)} button:active{transform:scale(.98)}
 .textLayer span,.textLayer br{color:transparent;position:absolute;white-space:pre;cursor:text;transform-origin:0 0}
 .textLayer span::selection{background:rgba(80,130,230,.35)}
 .textLayer ::selection{background:rgba(80,130,230,.35)}
+#doc{max-width:760px;margin:0 auto;padding:28px 8px 120px;font-size:16px;line-height:1.75;color:var(--text)}
+#doc h1{font-size:24px;font-weight:500;margin:0 0 18px;text-align:left}
+#doc h2{font-size:20px;font-weight:500;margin:32px 0 10px}
+#doc h3{font-size:17px;font-weight:500;margin:24px 0 8px;color:var(--text-2)}
+#doc p{margin:0 0 14px}
+#doc img{max-width:100%;height:auto;display:block;margin:14px auto;border:.5px solid var(--border);border-radius:6px;background:#fff}
+#doc figure{margin:20px 0} #doc figcaption{font-size:13px;color:var(--text-2);margin-top:6px;text-align:center}
+#doc .references,#doc #refs{font-size:13px;color:var(--text-2);border-top:.5px solid var(--border);margin-top:32px;padding-top:14px}
+#doc ::selection{background:rgba(80,130,230,.30)}
+.flash-html{background:var(--warn-bg);border-radius:3px;box-shadow:0 0 0 2px var(--warn-bg)}
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
 </head>
 <body>
 <div id="app">
