@@ -57,6 +57,7 @@ function renderTopbar(){
   document.getElementById('chsel').onclick = openChapterMenu;
   document.getElementById('btn-theme').onclick = toggleTheme;
   document.getElementById('btn-send').onclick = sendToClaude;
+  document.getElementById('btn-history').onclick = showHistory;
   const si = document.getElementById('search');
   si.addEventListener('keydown', e => { if (e.key === 'Enter') runSearch(si.value); if (e.key === 'Escape'){ si.value=''; clearSearch(); } });
 }
@@ -281,6 +282,65 @@ function homeHtml(){
       ${cont}
       <div style="font-size:11px;letter-spacing:.06em;color:var(--text-3);margin-bottom:13px">ALL CHAPTERS</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px">${cards}</div></div>`;
+}
+
+// ---------- history / version diff (reads phd-dissertation) ----------
+const DISS_REPO = 'mattlmccoy/phd-dissertation';
+async function ghApi(t, path){
+  const r = await fetch('https://api.github.com/' + path, { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github+json' } });
+  if (!r.ok) throw new Error('HTTP '+r.status); return r.json();
+}
+async function showHistory(){
+  const t = tok();
+  document.getElementById('nav').style.display = 'none';
+  document.getElementById('comments').style.display = 'none';
+  if (!t){ read.innerHTML = `<div class="empty"><div style="font-size:15px;font-weight:500">History needs your access token</div><div style="font-size:13px;color:var(--text-2);margin-top:6px">Open a chapter and add a token with read access to <code>${DISS_REPO}</code>.</div></div>`; return; }
+  read.innerHTML = `<div class="empty">Loading history…</div>`;
+  const file = `chapters/${current}.tex`;
+  try {
+    const commits = await ghApi(t, `repos/${DISS_REPO}/commits?path=${encodeURIComponent(file)}&per_page=14`);
+    if (!commits.length){ read.innerHTML = `<div class="empty">No commit history for ${file}.</div>`; return; }
+    renderHistoryShell(commits, file); selectCommit(commits[0].sha, file);
+  } catch(e){ read.innerHTML = `<div class="empty">Couldn't load history from ${DISS_REPO} — your token may not include it (${e.message}).</div>`; }
+}
+function renderHistoryShell(commits, file){
+  const m = chMeta(current);
+  read.innerHTML = `<div style="height:100%;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:.5px solid var(--border);background:var(--bg-2)">
+        <i class="ti ti-history"></i><strong style="font-weight:600">History · Chapter ${m.n}</strong>
+        <button class="btn" id="hist-close" style="margin-left:auto"><i class="ti ti-x"></i>Close</button></div>
+      <div style="flex:1;display:flex;min-height:0">
+        <div id="hist-list" style="flex:0 0 290px;border-right:.5px solid var(--border);overflow:auto;padding:12px 10px"></div>
+        <div id="hist-diff" style="flex:1;min-width:0;overflow:auto;padding:16px 20px"></div></div></div>`;
+  document.getElementById('hist-close').onclick = () => enterChapter(current);
+  document.getElementById('hist-list').innerHTML = commits.map(c => {
+    const d = new Date(c.commit.author.date), msg = c.commit.message.split('\n')[0];
+    return `<div class="hcommit" data-sha="${c.sha}" style="display:flex;gap:9px;padding:9px 10px;border-radius:8px;cursor:pointer">
+      <i class="ti ti-git-commit" style="color:var(--text-3);margin-top:2px"></i>
+      <div style="min-width:0"><div style="font-size:12.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(msg).slice(0,42)}</div>
+        <div style="font-size:10.5px;color:var(--text-3)">${escapeHtml(c.commit.author.name.split(' ')[0])} · ${d.toLocaleDateString()} · ${c.sha.slice(0,7)}</div></div></div>`;
+  }).join('');
+  document.querySelectorAll('.hcommit').forEach(el => el.onclick = () => selectCommit(el.dataset.sha, file));
+}
+async function selectCommit(sha, file){
+  document.querySelectorAll('.hcommit').forEach(el => el.style.background = el.dataset.sha === sha ? 'var(--accent-bg)' : 'transparent');
+  const diff = document.getElementById('hist-diff'); diff.innerHTML = 'Loading diff…';
+  try {
+    const detail = await ghApi(tok(), `repos/${DISS_REPO}/commits/${sha}`);
+    const f = (detail.files||[]).find(x => x.filename === file);
+    diff.innerHTML = `<div style="font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--text-3);margin-bottom:10px">${file}</div>` +
+      (f && f.patch ? renderPatch(f.patch) : `<div style="color:var(--text-3)">No textual change to this file in the commit.</div>`);
+  } catch(e){ diff.innerHTML = `<div style="color:var(--text-3)">Couldn't load diff (${e.message}).</div>`; }
+}
+function renderPatch(patch){
+  return `<div style="font-family:ui-monospace,Menlo,monospace;font-size:12px;line-height:1.7;border:.5px solid var(--border);border-radius:var(--r-md);overflow:hidden">` +
+    patch.split('\n').slice(0,500).map(l => { const c = l[0];
+      if (l.startsWith('@@')) return `<div style="padding:3px 12px;background:var(--bg-3);color:var(--text-3)">${escapeHtml(l)}</div>`;
+      if (l.startsWith('+++')||l.startsWith('---')||l.startsWith('diff ')||l.startsWith('index ')) return '';
+      if (c === '+') return `<div style="padding:1px 12px;background:var(--success-bg);color:var(--success)">${escapeHtml(l)}</div>`;
+      if (c === '-') return `<div style="padding:1px 12px;background:var(--citation-bg);color:var(--citation)">${escapeHtml(l)}</div>`;
+      return `<div style="padding:1px 12px;color:var(--text-2)">${escapeHtml(l)}</div>`;
+    }).join('') + `</div>`;
 }
 
 // ---------- boot ----------
