@@ -26,7 +26,7 @@ const save = () => localStorage.setItem('review:'+current, JSON.stringify(review
 const tok = () => localStorage.getItem('ghpat');
 
 // ---------- GitHub review sync (private data repo) ----------
-let reviewSha = null, syncTimer = null;
+let reviewSha = null, syncTimer = null, scrollSaveT = null;
 async function syncDown(){
   const t = tok(); if (!t) return;
   try { const { json, sha } = await getJson(t, reviewPath(current)); reviewSha = sha;
@@ -131,7 +131,10 @@ function buildNav(){
     nav.appendChild(a);
   });
   read.onscroll = () => { let cur = null; hs.forEach(h => { if (h.getBoundingClientRect().top < 140) cur = h.id; });
-    nav.querySelectorAll('a').forEach(a => a.classList.toggle('active', a.dataset.sec === cur)); };
+    nav.querySelectorAll('a').forEach(a => a.classList.toggle('active', a.dataset.sec === cur));
+    const frac = read.scrollTop / Math.max(1, read.scrollHeight - read.clientHeight);
+    review.cursor = { sec: cur, readFrac: Math.min(1, Math.max(review.cursor?.readFrac || 0, frac)) };
+    clearTimeout(scrollSaveT); scrollSaveT = setTimeout(() => { save(); syncUpSoon(); }, 900); };
   read.onscroll();
 }
 
