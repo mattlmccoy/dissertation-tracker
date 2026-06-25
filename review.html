@@ -22,7 +22,12 @@
 button{font:inherit;color:inherit;background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-md);padding:6px 12px;cursor:pointer}
 button:hover{background:var(--bg-2)} button:active{transform:scale(.98)}
 .hidden{display:none!important}
+.textLayer{position:absolute;inset:0;overflow:hidden;line-height:1;text-size-adjust:none;forced-color-adjust:none;transform-origin:0 0}
+.textLayer span,.textLayer br{color:transparent;position:absolute;white-space:pre;cursor:text;transform-origin:0 0}
+.textLayer span::selection{background:rgba(80,130,230,.35)}
+.textLayer ::selection{background:rgba(80,130,230,.35)}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
 </head>
 <body>
 <div id="app">
