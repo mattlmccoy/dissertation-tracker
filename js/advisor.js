@@ -19,6 +19,19 @@ async function getJson(t, path){ const r=await fetch(`${_API}/repos/${_OWNER}/${
 async function putJson(t, path, obj, sha, msg){ const content=btoa(unescape(encodeURIComponent(JSON.stringify(obj,null,2)))); const put=s=>fetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${path}`,{method:'PUT',headers:_hdr(t),body:JSON.stringify({message:msg,content,sha:s||undefined})}); let r=await put(sha); if(r.status===409){ try{ const cur=await getJson(t,path); r=await put(cur.sha); }catch(e){} } if(!r.ok) throw new Error('put failed: '+r.status); return (await r.json()).content.sha; }
 
 const ADVISOR = window.ADVISOR || { id: '?', name: 'Reviewer' };
+// shared "general/lab" portal: many people use one link, each gets a per-person comment file
+const SHARED = !!ADVISOR.shared;
+const reviewerName = () => localStorage.getItem('reviewerName') || '';
+function ensureReviewerId(){
+  let id = localStorage.getItem('reviewerId');
+  if (!id){ const base = (reviewerName()||'guest').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'').slice(0,20) || 'guest';
+    id = 'general-' + base + '-' + Math.random().toString(36).slice(2,6); localStorage.setItem('reviewerId', id); }
+  return id;
+}
+const effId = () => SHARED ? (localStorage.getItem('reviewerId') || ADVISOR.id) : ADVISOR.id;   // per-person file id
+const RELEASE_ID = SHARED ? 'general' : ADVISOR.id;                                              // shared gate
+const authorId = () => SHARED ? (reviewerName() || 'Lab reviewer') : ADVISOR.id;                // comment attribution
+const displayName = () => SHARED ? (reviewerName() || ADVISOR.name) : ADVISOR.name;
 const DATA_REPO = 'mattlmccoy/dissertation-tracker-data';
 const CHAPTERS = [
   { id:'ch_introduction', n:1, title:'Introduction' },
@@ -51,8 +64,8 @@ function showKeyExpired(){
     <button class="btn btn-primary" id="newkey">Enter a new key</button></div>`;
   read.querySelector('#newkey').onclick = () => { const v = prompt('New access key:'); if (v && v.trim()){ localStorage.setItem('ghpat', v.trim()); keyBad = false; boot(); } };
 }
-const reviewPath = ch => `advisor/${ADVISOR.id}/${ch}.json`;
-const localKey = ch => `adv:${ADVISOR.id}:${ch}`;
+const reviewPath = ch => `advisor/${effId()}/${ch}.json`;
+const localKey = ch => `adv:${effId()}:${ch}`;
 const loadLocal = ch => JSON.parse(localStorage.getItem(localKey(ch)) || 'null') || newReview(ch, '');
 const save = () => localStorage.setItem(localKey(current), JSON.stringify(review));
 if (localStorage.getItem('theme') === 'dark') document.documentElement.classList.add('dark');
@@ -69,7 +82,7 @@ async function syncDown(){ const t = tok(); if (!t) return;
   catch(e){ /* first time / offline */ } }
 function syncUpSoon(){ if (!tok()) return; clearTimeout(syncTimer); syncTimer = setTimeout(syncUp, 1200); }
 async function syncUp(){ const t = tok(); if (!t) return;
-  try { const { sha } = await getJson(t, reviewPath(current)); reviewSha = await putJson(t, reviewPath(current), review, sha || reviewSha, `review(${ADVISOR.id}): ${current}`); }
+  try { const { sha } = await getJson(t, reviewPath(current)); reviewSha = await putJson(t, reviewPath(current), review, sha || reviewSha, `review(${effId()}): ${current}`); }
   catch(e){ /* retried next change */ } }
 
 // ---------- release gate + content ----------
@@ -80,7 +93,7 @@ async function loadRelease(){
   try { const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/release.json?t=${Date.now()}`,{ headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' });
     if (r.status === 401){ keyBad = true; return; }
     if (r.ok) apply(await r.json()); } catch(e){ released = []; }
-  function apply(j){ released = (j?.[ADVISOR.id]?.released) || []; }
+  function apply(j){ released = (j?.[RELEASE_ID]?.released) || []; }
 }
 async function loadChapter(ch){
   current = ch; review = loadLocal(ch);
@@ -227,7 +240,7 @@ function showPopover(anchor,rects,defaultTag='wording'){
     else if(mode==='insert') edit={op:'insert',find:anchor.quote,position:'after',replacement:repl.value};
     else if(mode==='delete') edit={op:'delete',find:anchor.quote,replacement:''};
     if(edit&&mode!=='delete'&&!repl.value.trim()){ flash('Enter the '+(mode==='insert'?'text to insert':'replacement text')+'.'); return; }
-    review=addComment(review,{ anchor:pending, kind:edit?'suggestion':pending.kind, tag:edit?'edit':tag, body:body.value, edit, author:ADVISOR.id });
+    review=addComment(review,{ anchor:pending, kind:edit?'suggestion':pending.kind, tag:edit?'edit':tag, body:body.value, edit, author:authorId() });
     save(); syncUpSoon(); renderComments(); buildNav(); paintHighlights(); pop.remove(); window.getSelection().removeAllRanges(); };
 }
 
@@ -338,7 +351,7 @@ function enterHome(){
       <div style="font-size:11px;color:var(--text-2)">${n?`${n} comment${n>1?'s':''}`:'open to review'}</div></div>`; }).join('');
   const oc=JSON.parse(localStorage.getItem(localKey('__outline__'))||'null'); const ocn=oc?.comments?.length||0;
   read.innerHTML=`<div style="max-width:900px;margin:0 auto;padding:28px 24px 90px">
-      <div style="font-size:13px;color:var(--text-2);margin-bottom:20px">Welcome, ${escapeHtml(ADVISOR.name)}. The chapters released for your review are below. Open one to read it and leave comments or suggested edits; use <b>Submit comments</b> when you're done.</div>
+      <div style="font-size:13px;color:var(--text-2);margin-bottom:20px">Welcome, ${escapeHtml(displayName())}. The chapters released for your review are below. Open one to read it and leave comments or suggested edits; use <b>Submit comments</b> when you're done.</div>
       <button id="outline-card" style="display:flex;align-items:center;gap:13px;width:100%;text-align:left;border:.5px solid var(--accent);border-radius:var(--r-lg);padding:14px 16px;margin-bottom:26px;background:var(--accent-bg);cursor:pointer;font:inherit;color:var(--text)">
         <i class="ti ti-list-tree" style="font-size:22px;color:var(--accent)"></i>
         <div style="min-width:0"><div style="font-size:14px;font-weight:500">Proposed dissertation outline</div>
@@ -406,7 +419,7 @@ function outlineComment(btn, label, section){
   (btn.closest('.ol-node, .ol-chead')||btn).after(box); box.querySelector('textarea').focus();
   box.querySelector('.ol-cancel').onclick=()=>box.remove();
   box.querySelector('.ol-save').onclick=()=>{ const v=box.querySelector('textarea').value.trim(); if(!v) return;
-    review=addComment(review,{ anchor:{quote:label, section}, kind:'text', tag:'suggestion', body:v, author:ADVISOR.id });
+    review=addComment(review,{ anchor:{quote:label, section}, kind:'text', tag:'suggestion', body:v, author:authorId() });
     save(); syncUpSoon(); box.remove();
     const n=review.comments.filter(c=>c.anchor?.quote===label && c.anchor?.section===section).length; btn.innerHTML=`<i class="ti ti-message"></i>${n}`;
     renderComments(); flash('Comment added — use Submit comments when finished.'); };
@@ -425,7 +438,21 @@ function setupMobileSheet(){
   document.body.append(back, fab);
 }
 // ---------- boot ----------
-async function boot(){ keyBad = false; await loadRelease(); if (keyBad && tok()){ showKeyExpired(); return; } enterHome(); }
+async function boot(){ keyBad = false; await loadRelease(); if (keyBad && tok()){ showKeyExpired(); return; }
+  if (SHARED && tok() && !reviewerName()){ showNameEntry(); return; } enterHome(); }
+function showNameEntry(){
+  document.getElementById('nav').style.display = 'none'; document.getElementById('comments').style.display = 'none';
+  document.getElementById('topbar').innerHTML = `<strong style="font-size:16px;font-weight:600">Dissertation review</strong>`;
+  read.innerHTML = `<div class="empty"><i class="ti ti-user-circle" style="font-size:26px;color:var(--text-3)"></i>
+    <div style="font-size:17px;font-weight:500;margin:10px 0 6px">Welcome — what's your name?</div>
+    <div style="font-size:13px;line-height:1.6;margin-bottom:14px;max-width:400px">So the author knows who left each comment. Stored only in this browser.</div>
+    <input id="rname" placeholder="Your name" autocomplete="name" style="padding:9px 12px;border:.5px solid var(--border-2);border-radius:8px;font:inherit;font-size:14px;min-width:250px;background:var(--bg);color:var(--text);outline:none"><br>
+    <button class="btn btn-primary" id="rgo" style="margin-top:13px">Start reviewing</button></div>`;
+  const go = () => { const v = read.querySelector('#rname').value.trim(); if (!v) return; localStorage.setItem('reviewerName', v); ensureReviewerId(); boot(); };
+  read.querySelector('#rgo').onclick = go;
+  read.querySelector('#rname').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+  read.querySelector('#rname').focus();
+}
 setupMobileSheet();
 window.addEventListener('keydown',e=>{ const pop=document.getElementById('pop'); if(pop){ if(e.key==='Escape') pop.querySelector('#ccancel').click(); return; }
   if(/INPUT|TEXTAREA/.test(document.activeElement?.tagName||'')) return; if(e.key==='/'){ e.preventDefault(); document.getElementById('search')?.focus(); } });

@@ -146,6 +146,12 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;pad
 .ol-node.ol-sub{padding-left:18px;border-top:none;padding-top:3px;padding-bottom:3px}
 .ol-node.ol-sub .ol-slabel{font-size:12.5px;color:var(--text-2)}
 .ol-srow{flex:1;min-width:0} .ol-slabel{font-size:13px;color:var(--text)} .ol-syn{display:block;font-size:11.5px;color:var(--text-3);margin-top:1px;line-height:1.4}
+.ol-node.ol-sub::before{content:"";position:absolute;margin-left:-12px;margin-top:8px;width:6px;height:6px;border-left:1px solid var(--border-2);border-bottom:1px solid var(--border-2)}
+.ol-cmt{flex:0 0 auto;display:inline-flex;align-items:center;gap:3px;border:.5px solid var(--border);background:var(--bg);border-radius:14px;padding:2px 9px;font:inherit;font-size:11.5px;color:var(--text-2);cursor:pointer}
+.ol-cmt:hover{border-color:var(--accent);color:var(--accent)} .ol-cmt i{font-size:14px}
+.ol-composer{margin:2px 0 8px 48px;display:flex;flex-direction:column;gap:7px}
+.ol-composer textarea{width:100%;border:.5px solid var(--accent);border-radius:7px;padding:7px 9px;font:inherit;font-size:13px;background:var(--bg);color:var(--text);resize:vertical;outline:none}
+.ol-cactions{display:flex;gap:7px}
 /* chapter history — old-vs-new diff */
 .hdiff{border:.5px solid var(--border);border-radius:var(--r-md);overflow:hidden;font-size:13px;line-height:1.55}
 .hdiff > div{padding:2px 12px}

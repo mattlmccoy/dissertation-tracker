@@ -130,10 +130,15 @@ function renderDoc(fragment){
 // ---------- advisor comments surfaced in the owner reviewer ----------
 const ADVISOR_IDS = ['CJS','CCS'];
 const ADVISOR_NAME = { CJS:'Saldaña', CCS:'Seepersad' };
+// label a comment's source: named advisor → their name; a shared lab reviewer (general-<slug>) → the name they entered
+const whoLabel = c => ADVISOR_NAME[c._advisor] || (/^general-/.test(c._advisor||'') ? (c.author || 'Lab reviewer') : c._advisor);
 let advisorComments = [];
 async function loadAdvisorComments(ch){
   advisorComments = []; const dev = location.hostname==='localhost' || location.hostname==='127.0.0.1';
-  for (const a of ADVISOR_IDS){
+  let ids = ADVISOR_IDS;
+  if (!dev){ const t = tok(); if (t){ try { const paths = await ghTree(t); const re = new RegExp(`^advisor/([^/]+)/${ch}\\.json$`);
+    ids = [...new Set(paths.map(p => { const m = p.match(re); return m && m[1]; }).filter(Boolean))]; } catch(e){} } }
+  for (const a of ids){
     try {
       let json = null;
       if (dev){ const r = await fetch(`./advisor/${a}/${ch}.json`); if (r.ok) json = await r.json(); }
@@ -577,7 +582,7 @@ function renderAdvisorSection(pane){
   advisorComments.forEach(c => {
     const card = document.createElement('div'); card.className = 'ccard adv'; card.dataset.aid = c.id;
     card.innerHTML = `<div class="row">
-        <span class="chip advchip"><i class="ti ti-user" style="font-size:11px;margin-right:3px"></i>${escapeHtml(ADVISOR_NAME[c._advisor]||c._advisor)}</span>
+        <span class="chip advchip"><i class="ti ti-user" style="font-size:11px;margin-right:3px"></i>${escapeHtml(whoLabel(c))}</span>
         ${c.tag&&c.tag!=='other'?`<span class="chip" style="margin-left:5px">${c.kind==='suggestion'?'<i class="ti ti-pencil" style="font-size:10px;margin-right:2px"></i>':''}${escapeHtml(c.tag)}</span>`:''}
         ${c.status==='submitted'?'<span class="status" style="margin-left:auto;background:var(--success-bg);color:var(--success)">submitted</span>':''}</div>
       <div class="snip">"${escapeHtml((c.anchor?.quote||'').slice(0,52))}"</div>
@@ -849,8 +854,9 @@ function enterHome(){
 }
 // ---------- proposed outline (read-only view of what advisors see) ----------
 async function loadOwnerOutline(){
+  current = '__outline__'; review = loadLocalReview('__outline__');
   document.getElementById('nav').style.display = 'none';
-  document.getElementById('comments').style.display = 'none';
+  document.getElementById('comments').style.display = '';
   document.getElementById('topbar').innerHTML = `<button class="icbtn" id="ol-back" title="Home"><i class="ti ti-arrow-left"></i></button>
     <strong style="font-size:15px;font-weight:600;margin-left:4px">Proposed outline</strong>
     <button class="icbtn" id="btn-theme" style="margin-left:auto"><i class="ti ti-moon"></i></button>`;
@@ -863,22 +869,41 @@ async function loadOwnerOutline(){
     if (!data){ const t = tok(); if (t){ const got = await getJson(t, 'outline.json'); data = got.json; } }
   } catch(e){}
   if (!data){ read.innerHTML = `<div class="empty">Couldn't load the outline. Open a chapter once to connect your token, then retry.</div>`; return; }
-  renderOwnerOutline(data);
+  renderOwnerOutline(data); renderComments(); syncDown();
 }
 function renderOwnerOutline(data){
+  const cnt = (label, sec) => review.comments.filter(c => c.anchor?.quote===label && c.anchor?.section===sec).length;
+  const badge = n => n ? `<i class="ti ti-message"></i>${n}` : `<i class="ti ti-message-plus"></i>`;
+  const node = (title, synopsis, sec, cls) => `<div class="ol-node ${cls}"><div class="ol-srow"><span class="ol-slabel">${escapeHtml(title)}</span>${synopsis?`<span class="ol-syn">${escapeHtml(synopsis)}</span>`:''}</div>
+      <button class="ol-cmt" data-node="${escapeHtml(title)}" data-sec="${escapeHtml(sec)}">${badge(cnt(title, sec))}</button></div>`;
   const chapters = data.chapters.map(ch => {
     const secs = (ch.sections||[]).map(s => {
-      const subs = (s.subsections||[]).map(ss => `<div class="ol-node ol-sub"><div class="ol-srow"><span class="ol-slabel">${escapeHtml(ss.title)}</span>${ss.synopsis?`<span class="ol-syn">${escapeHtml(ss.synopsis)}</span>`:''}</div></div>`).join('');
-      return `<div class="ol-node ol-sec"><div class="ol-srow"><span class="ol-slabel">${escapeHtml(s.title)}</span>${s.synopsis?`<span class="ol-syn">${escapeHtml(s.synopsis)}</span>`:''}</div></div>${subs}`;
+      const subs = (s.subsections||[]).map(ss => node(ss.title, ss.synopsis, ch.title, 'ol-sub')).join('');
+      return node(s.title, s.synopsis, ch.title, 'ol-sec') + subs;
     }).join('');
     return `<div class="ol-chapter open"><div class="ol-chead" data-toggle><i class="ti ti-chevron-right ol-chev"></i><span class="ol-cn">${ch.n}</span>
-        <div style="min-width:0;flex:1"><div class="ol-ctitle">${escapeHtml(ch.title)}</div>${ch.synopsis?`<div class="ol-csyn">${escapeHtml(ch.synopsis)}</div>`:''}</div></div>
+        <div style="min-width:0;flex:1"><div class="ol-ctitle">${escapeHtml(ch.title)}</div>${ch.synopsis?`<div class="ol-csyn">${escapeHtml(ch.synopsis)}</div>`:''}</div>
+        <button class="ol-cmt" data-node="${escapeHtml(ch.title)}" data-sec="${escapeHtml(ch.title)}">${badge(cnt(ch.title, ch.title))}</button></div>
       <div class="ol-sections">${secs}</div></div>`;
   }).join('');
   read.innerHTML = `<div class="ol-wrap"><h1 class="ol-h1">${escapeHtml(data.title||'Proposed outline')}</h1>
     <p class="ol-intro">${escapeHtml(data.intro||'')}</p>
-    <div style="font-size:11.5px;color:var(--text-3);margin-bottom:16px">This is exactly what advisors see and comment on. Their outline comments land in your inbox and the Advisor releases panel. Edit the structure by updating <code>outline.json</code>.</div>${chapters}</div>`;
-  read.querySelectorAll('[data-toggle]').forEach(h => h.onclick = () => h.closest('.ol-chapter').classList.toggle('open'));
+    <div style="font-size:11.5px;color:var(--text-3);margin-bottom:16px">This is what advisors and lab reviewers see. Comment on any node to leave yourself a note; their outline comments land in your inbox. Edit the structure by updating <code>outline.json</code>.</div>${chapters}</div>`;
+  read.querySelectorAll('[data-toggle]').forEach(h => h.onclick = e => { if (e.target.closest('.ol-cmt')) return; h.closest('.ol-chapter').classList.toggle('open'); });
+  read.querySelectorAll('.ol-cmt').forEach(b => b.onclick = e => { e.stopPropagation(); ownerOutlineComment(b, b.dataset.node, b.dataset.sec); });
+}
+function ownerOutlineComment(btn, label, section){
+  document.getElementById('ol-composer')?.remove();
+  const box = document.createElement('div'); box.id = 'ol-composer'; box.className = 'ol-composer';
+  box.innerHTML = `<textarea rows="2" placeholder="Note on “${escapeHtml(label)}”…"></textarea>
+    <div class="ol-cactions"><button class="btn btn-primary ol-save" style="padding:4px 11px;font-size:12px">Add note</button><button class="btn ol-cancel" style="padding:4px 11px;font-size:12px">Cancel</button></div>`;
+  (btn.closest('.ol-node, .ol-chead')||btn).after(box); box.querySelector('textarea').focus();
+  box.querySelector('.ol-cancel').onclick = () => box.remove();
+  box.querySelector('.ol-save').onclick = () => { const v = box.querySelector('textarea').value.trim(); if (!v) return;
+    review = addComment(review, { anchor:{ quote:label, section }, kind:'text', tag:'wording', body:v });
+    save(); syncUpSoon(); box.remove();
+    const n = review.comments.filter(c => c.anchor?.quote===label && c.anchor?.section===section).length; btn.innerHTML = `<i class="ti ti-message"></i>${n}`;
+    renderComments(); flash('Note added to the outline.'); };
 }
 // ---------- inbox / triage: aggregate everything that needs the owner across all chapters ----------
 async function gatherInbox(t){
@@ -1200,17 +1225,24 @@ async function openReleasePanel(){
   let rel, sha;
   try { const r = await getJson(t, 'release.json'); rel = r.json || {}; sha = r.sha; }
   catch(e){ document.getElementById('rel-body').textContent = 'Could not load release.json ('+e.message+').'; return; }
-  const advs = Object.keys(rel).filter(k => k !== '_comment');
+  if (!rel.general) rel.general = { name:'General reviewers', released:[] };   // shared lab-reviewer gate
+  const advs = Object.keys(rel).filter(k => k !== '_comment');                 // gating rows + portal links
   const base = location.origin + location.pathname.replace(/[^/]+$/, '');
-  // pull each advisor's submitted comments (only for chapters they have released) for owner-side review
-  const inbox = {};   // inbox[advisor] = [{chapter, comment}]
-  await Promise.all(advs.flatMap(a => (rel[a].released||[]).map(async ch => {
-    try { const r = await getJson(t, `advisor/${a}/${ch}.json`); (r.json?.comments||[]).forEach(c => (inbox[a] = inbox[a]||[]).push({ chapter:ch, c })); } catch(e){}
-  })));
+  // discover every reviewer comment file (named advisors AND per-person lab reviewers) via the tree
+  const inbox = {};   // inbox[fileId] = [{chapter, comment}]
+  let advFilePaths = [];
+  try { const paths = await ghTree(t); advFilePaths = paths.filter(p => /^advisor\/[^/]+\/.+\.json$/.test(p)); } catch(e){}
+  await Promise.all(advFilePaths.map(async p => {
+    const m = p.match(/^advisor\/([^/]+)\/(.+)\.json$/); const id = m[1], ch = m[2];
+    try { const r = await getJson(t, p); (r.json?.comments||[]).forEach(c => (inbox[id] = inbox[id]||[]).push({ chapter:ch, c })); } catch(e){}
+  }));
+  const idLabel = id => ADVISOR_NAME[id] || (/^general-/.test(id) ? (inbox[id]?.[0]?.c.author || 'Lab reviewer') : (rel[id]?.name || id));
+  // inbox sections: named advisors first, then per-person lab reviewers
+  const inboxIds = Object.keys(inbox).sort((a,b) => (/^general-/.test(a)?1:0) - (/^general-/.test(b)?1:0) || idLabel(a).localeCompare(idLabel(b)));
   const rows = CHAPTERS.map(c => `<tr><td>${c.n}. ${escapeHtml(shortTitle(c.title))}</td>${advs.map(a => `<td style="text-align:center"><input type="checkbox" data-a="${a}" data-ch="${c.id}" ${(rel[a].released||[]).includes(c.id)?'checked':''}></td>`).join('')}</tr>`).join('');
-  const inboxHtml = advs.map(a => {
+  const inboxHtml = (inboxIds.length ? inboxIds : []).map(a => {
     const items = inbox[a]||[];
-    return `<div class="rel-inbox"><div class="rel-inbox-h"><b>${escapeHtml(rel[a].name||a)}</b><span class="chip" style="background:var(--accent-bg);color:var(--accent)">${items.length} comment${items.length!==1?'s':''}</span></div>${
+    return `<div class="rel-inbox"><div class="rel-inbox-h"><b>${escapeHtml(idLabel(a))}</b>${/^general-/.test(a)?'<span class="chip" style="margin-left:5px">lab</span>':''}<span class="chip" style="background:var(--accent-bg);color:var(--accent)">${items.length} comment${items.length!==1?'s':''}</span></div>${
       items.length ? items.map(({chapter, c}) => `<div class="rel-cmt" data-ch="${chapter}" data-a="${a}" data-cid="${c.id}" data-q="${escapeHtml((c.anchor?.quote||'').slice(0,60))}">
           <div class="rel-cmt-h">${escapeHtml(chMeta(chapter).n+'')}. ${escapeHtml(shortTitle(chMeta(chapter).title))} · ${escapeHtml(c.anchor?.section||'')} ${c.status==='submitted'?'<span class="chip" style="background:var(--success-bg);color:var(--success);margin-left:6px">submitted</span>':c.status==='resolved'?'<span class="chip" style="margin-left:6px">withdrawn</span>':''}</div>
           <div class="rel-cmt-q">"${escapeHtml((c.anchor?.quote||'').slice(0,90))}"</div>
@@ -1227,7 +1259,7 @@ async function openReleasePanel(){
     <div class="rel-sec">Which chapters each advisor can see</div>
     <table class="rel-tbl"><thead><tr><th>Chapter</th>${advs.map(a => `<th>${escapeHtml(a)}<div style="font-weight:400;font-size:10px;color:var(--text-3)">${escapeHtml(rel[a].name||a)}</div></th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>
     <div style="display:flex;gap:8px;margin:14px 0 6px;align-items:center"><button class="btn btn-primary" id="rel-save">Save &amp; publish</button><span id="rel-stat" style="font-size:12px;color:var(--text-3)"></span></div>
-    <div class="rel-links">${advs.map(a => `<div><b>${escapeHtml(rel[a].name||a)}</b> → <code>${escapeHtml(base+a+'.html')}</code></div>`).join('')}</div>
+    <div class="rel-links">${advs.map(a => `<div><b>${escapeHtml(rel[a].name||a)}</b> → <code>${escapeHtml(base + (a==='general'?'review-lab.html':a+'.html'))}</code></div>`).join('')}</div>
     <div class="rel-sec" style="margin-top:26px">Comments received from advisors</div>${inboxHtml}`;
   document.querySelectorAll('.rel-cmt').forEach(el => {
     el.querySelector('.rel-open').onclick = () => {
