@@ -433,14 +433,40 @@ function buildCommentCard(c){
       <div class="body" style="${st==='resolved'?'opacity:.5;text-decoration:line-through':''}">${escapeHtml(c.body)}</div>
       ${suggHtml(c)}
       ${c.claude?.response ? `<div class="cresp"><div class="cresp-h"><i class="ti ti-robot-face"></i>Claude</div>${escapeHtml(c.claude.response)}</div>` : ''}
-      ${c.claude?.branch ? `<div class="branch"><i class="ti ti-git-branch"></i>${escapeHtml(c.claude.branch)}</div>` : ''}`;
+      ${c.claude?.branch ? `<div class="branch"><i class="ti ti-git-branch"></i>${escapeHtml(c.claude.branch)}</div>` : ''}
+      ${(c.thread||[]).map(m => `<div class="cmsg ${m.author==='you'?'me':'cl'}"><span class="cmsg-h">${m.author==='you'?'You':'Claude'} · ${(m.ts||'').slice(0,10)}</span>${escapeHtml(m.text)}</div>`).join('')}
+      ${st!=='resolved' ? `<div class="creply"><button class="creply-open">${(c.thread&&c.thread.length)?'Reply':(c.claude?.response||c.claude?.branch?'Reply / push back':'Add a note')}</button>
+        <div class="creply-form" style="display:none"><textarea class="creply-t" rows="2" placeholder="${c.claude?.response||c.claude?.branch?'Reply to Claude / request a change…':'Add a private note…'}"></textarea><button class="btn btn-primary creply-send" style="padding:4px 11px;font-size:11.5px">Send</button></div></div>` : ''}`;
     if (c.id === activeCommentId) card.classList.add('active');
     card.onmouseenter = () => { card.querySelector('.cactions').style.display='flex'; const s=card.querySelector('.status'); if (st!=='open') s.style.visibility='hidden'; document.querySelector(`#doc .cmark[data-id="${c.id}"]`)?.classList.add('cmark-hot'); };
     card.onmouseleave = () => { card.querySelector('.cactions').style.display='none'; const s=card.querySelector('.status'); if (s) s.style.visibility=''; document.querySelector(`#doc .cmark[data-id="${c.id}"]`)?.classList.remove('cmark-hot'); };
     card.querySelector('.snip').onclick = () => jumpTo(c);
     card.querySelector('.body').onclick = () => jumpTo(c);
     card.querySelectorAll('.cact').forEach(b => b.onclick = e => { e.stopPropagation(); commentAction(c.id, b.dataset.act); });
+    const ro = card.querySelector('.creply-open');
+    if (ro){ const form = card.querySelector('.creply-form');
+      ro.onclick = e => { e.stopPropagation(); form.style.display = form.style.display==='none'?'block':'none'; if (form.style.display==='block') form.querySelector('.creply-t').focus(); };
+      card.querySelector('.creply-send').onclick = e => { e.stopPropagation(); const v = form.querySelector('.creply-t').value.trim(); if (v) replyToComment(c.id, v); };
+    }
     return card;
+}
+// owner replies to a comment; a reply to a Claude-handled comment re-queues it for revision
+async function replyToComment(id, text){
+  const c = review.comments.find(x => x.id === id); if (!c) return;
+  const thread = [...(c.thread||[]), { author:'you', text, ts:new Date().toISOString() }];
+  const handled = !!(c.claude?.response || c.claude?.branch) || ['staged','approved','answered','merged'].includes(c.status);
+  review = updateComment(review, id, { thread, status: handled ? 'queued' : c.status });
+  save(); renderComments(); buildNav(); paintHighlights();
+  const t = tok(); if (!t){ flash('Reply saved locally.'); return; }
+  try {
+    await syncUp();
+    if (handled){
+      const { json, sha } = await getJson(t, 'jobs.json'); const jobs = Array.isArray(json) ? json : [];
+      jobs.push({ id:'j_'+Date.now().toString(36), type:'apply-edits', chapter:current, comment_ids:[id], revision:true, status:'queued', requested_ts:new Date().toISOString() });
+      await putJson(t, 'jobs.json', jobs, sha, 'review: revision reply '+id);
+      flash('Reply sent — Claude will revise this.');
+    } else flash('Note added.');
+  } catch(e){ flash('Reply saved; sync failed: '+e.message); }
 }
 function renderAdvisorSection(pane){
   if (!advisorComments.length) return;
@@ -707,11 +733,13 @@ function enterHome(){
   document.getElementById('topbar').innerHTML =
     `<strong style="font-size:16px;font-weight:600">Dissertation Reviewer</strong>
      <span style="margin-left:auto;font-size:12.5px;color:var(--text-2);display:inline-flex;align-items:center;gap:6px"><i class="ti ti-flag"></i>defense in ${daysToDefense()} days</span>
+     <button class="btn" id="btn-export" style="padding:6px 12px" title="Printable response to advisor comments"><i class="ti ti-file-text"></i>Response</button>
      <button class="btn" id="btn-releases" style="padding:6px 12px"><i class="ti ti-users"></i>Advisor releases</button>
      <a class="icbtn" href="./index.html" title="Back to dashboard"><i class="ti ti-layout-dashboard"></i></a>
      <button class="icbtn" id="btn-theme"><i class="ti ti-moon"></i></button>`;
   document.getElementById('btn-theme').onclick = toggleTheme;
   document.getElementById('btn-releases').onclick = openReleasePanel;
+  document.getElementById('btn-export').onclick = exportAdvisorResponse;
   read.innerHTML = homeHtml();
   read.querySelectorAll('[data-ch]').forEach(el => el.onclick = () => enterChapter(el.dataset.ch));
   refreshInbox();
@@ -739,6 +767,49 @@ async function gatherInbox(t){
     return fresh.length ? { advisor:m[1], ch:m[2], count:fresh.length } : null;
   }));
   return { jobs, chData, adv: advRaw.filter(Boolean) };
+}
+// printable "how each advisor comment was addressed" — neutral, author-facing wording (never AI)
+async function exportAdvisorResponse(){
+  const t = tok(); if (!t){ flash('Connect first to build the response.'); return; }
+  flash('Building response…');
+  try {
+    const paths = await ghTree(t);
+    const advFiles = paths.filter(p => /^advisor\/[^/]+\/.+\.json$/.test(p));
+    const byAdv = {};
+    await Promise.all(advFiles.map(async p => {
+      const m = p.match(/^advisor\/([^/]+)\/(.+)\.json$/);
+      const r = await getJson(t, p).catch(() => ({ json:null }));
+      const cs = (r.json?.comments || []).filter(x => x.status === 'submitted');
+      if (cs.length) (byAdv[m[1]] ??= []).push({ ch:m[2], comments:cs });
+    }));
+    const RES = { addressed:'Addressed — changed as suggested', declined:'Kept as written', noted:'Noted' };
+    const advs = Object.keys(byAdv).sort();
+    if (!advs.length){ flash('No advisor comments to export yet.'); return; }
+    const sections = advs.map(a => {
+      const name = ADVISOR_NAME[a] || a;
+      const items = byAdv[a].sort((x,y) => (chMeta(x.ch).n||0)-(chMeta(y.ch).n||0)).map(g => {
+        const rows = g.comments.map(c => {
+          const r = c.resolution;
+          const status = r ? RES[r.state] || 'Noted' : '<i style="color:#999">Pending</i>';
+          return `<tr><td class="q">"${escapeHtml((c.anchor?.quote||'').slice(0,90))}"</td>
+            <td class="cm">${escapeHtml(c.body)}</td>
+            <td class="rs"><b>${status}</b>${r?.note?`<div>${escapeHtml(r.note)}</div>`:''}</td></tr>`;
+        }).join('');
+        return `<h3>Chapter ${chMeta(g.ch).n} — ${escapeHtml(shortTitle(chMeta(g.ch).title))}</h3>
+          <table><thead><tr><th>Passage</th><th>Comment</th><th>Response</th></tr></thead><tbody>${rows}</tbody></table>`;
+      }).join('');
+      return `<section><h2>Response to ${escapeHtml(name)}</h2>${items}</section>`;
+    }).join('');
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Response to reviewer comments</title>
+      <style>body{font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;max-width:820px;margin:32px auto;padding:0 20px;color:#1a1a1a}
+      h1{font-size:22px} h2{font-size:17px;margin-top:30px;border-bottom:2px solid #333;padding-bottom:4px} h3{font-size:14px;color:#444;margin:18px 0 6px}
+      table{width:100%;border-collapse:collapse;margin-bottom:10px} th,td{border:1px solid #ddd;padding:7px 9px;vertical-align:top;text-align:left;font-size:12.5px}
+      th{background:#f4f4f4;font-size:11px;text-transform:uppercase;letter-spacing:.04em} td.q{width:30%;color:#555;font-style:italic} td.rs b{color:#1a7a3a} td.rs div{color:#444;margin-top:3px}
+      @media print{body{margin:0}}</style></head>
+      <body><h1>Response to reviewer comments</h1><p style="color:#666">Prepared by the author · ${new Date().toISOString().slice(0,10)}</p>${sections}</body></html>`;
+    const w = window.open('', '_blank'); if (!w){ flash('Allow pop-ups to open the response.'); return; }
+    w.document.write(html); w.document.close();
+  } catch(e){ flash('Export failed: '+e.message); }
 }
 async function refreshInbox(){
   const panel = document.getElementById('inbox-panel'); if (!panel) return;
