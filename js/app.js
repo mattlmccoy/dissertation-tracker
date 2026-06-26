@@ -1,4 +1,4 @@
-import { newReview, addComment } from './model.js';
+import { newReview, addComment, updateComment, deleteComment } from './model.js';
 import { anchorFromSelection } from './anchor.js';
 import { reviewPath, mergeReview, getJson, putJson } from './gh.js';
 
@@ -186,24 +186,56 @@ function showPopover(anchor, rects){
 }
 
 // ---------- comments rail ----------
+let editingId = null;
 function renderComments(){
   const pane = document.getElementById('comments');
   const open = review.comments.filter(c => c.status === 'open').length;
   pane.innerHTML = `<div class="lbl">COMMENTS<span style="margin-left:auto">${review.comments.length} · ${open} open</span></div>`;
   if (!review.comments.length){ pane.innerHTML += `<div style="font-size:12.5px;color:var(--text-3);padding:8px 2px">Select text in the chapter to leave a comment.</div>`; return; }
   review.comments.forEach(c => {
-    const stColor = c.status==='staged' ? 'var(--info)' : c.status==='merged' ? 'var(--success)' : 'var(--text-2)';
-    const stBg = c.status==='staged' ? 'var(--info-bg)' : c.status==='merged' ? 'var(--success-bg)' : 'transparent';
-    const card = document.createElement('div'); card.className = 'ccard';
+    const card = document.createElement('div'); card.className = 'ccard'; card.dataset.id = c.id;
+    if (editingId === c.id){ card.style.cursor = 'default'; card.appendChild(editCard(c)); pane.appendChild(card); return; }
+    const st = c.status;
+    const stColor = st==='staged'?'var(--info)':st==='merged'?'var(--success)':st==='resolved'?'var(--text-3)':'var(--text-2)';
+    const stBg = st==='staged'?'var(--info-bg)':st==='merged'?'var(--success-bg)':'transparent';
     card.innerHTML = `<div class="row">
         <span class="chip" style="background:var(--${c.tag}-bg);color:var(--${c.tag})">${c.tag}</span>
-        <span class="status" style="background:${stBg};color:${stColor}">${c.status}</span></div>
-      <div class="snip">"${(c.anchor.quote||'').slice(0,52)}"</div>
-      <div class="body">${escapeHtml(c.body)}</div>
-      ${c.claude?.branch ? `<div class="branch"><i class="ti ti-git-branch"></i>${c.claude.branch}</div>` : ''}`;
-    card.onclick = () => jumpTo(c);
+        <span class="cactions" style="margin-left:auto;display:none;gap:1px">
+          <button class="icbtn cact" data-act="resolve" title="${st==='resolved'?'Reopen':'Resolve'}" style="width:25px;height:25px;font-size:14px"><i class="ti ti-${st==='resolved'?'rotate-clockwise':'check'}"></i></button>
+          <button class="icbtn cact" data-act="edit" title="Edit" style="width:25px;height:25px;font-size:14px"><i class="ti ti-pencil"></i></button>
+          <button class="icbtn cact" data-act="del" title="Delete" style="width:25px;height:25px;font-size:14px"><i class="ti ti-trash"></i></button></span>
+        <span class="status" style="background:${stBg};color:${stColor};${st==='open'?'display:none':''}">${st}</span></div>
+      <div class="snip">"${escapeHtml((c.anchor.quote||'').slice(0,52))}"</div>
+      <div class="body" style="${st==='resolved'?'opacity:.5;text-decoration:line-through':''}">${escapeHtml(c.body)}</div>
+      ${c.claude?.branch ? `<div class="branch"><i class="ti ti-git-branch"></i>${escapeHtml(c.claude.branch)}</div>` : ''}`;
+    card.onmouseenter = () => { card.querySelector('.cactions').style.display='flex'; const s=card.querySelector('.status'); if (st!=='open') s.style.visibility='hidden'; };
+    card.onmouseleave = () => { card.querySelector('.cactions').style.display='none'; const s=card.querySelector('.status'); if (s) s.style.visibility=''; };
+    card.querySelector('.snip').onclick = () => jumpTo(c);
+    card.querySelector('.body').onclick = () => jumpTo(c);
+    card.querySelectorAll('.cact').forEach(b => b.onclick = e => { e.stopPropagation(); commentAction(c.id, b.dataset.act); });
     pane.appendChild(card);
   });
+}
+function commentAction(id, act){
+  const c = review.comments.find(x => x.id === id); if (!c) return;
+  if (act === 'edit'){ editingId = id; renderComments(); return; }
+  if (act === 'del'){ if (!confirm('Delete this comment?')) return; review = deleteComment(review, id); }
+  else if (act === 'resolve'){ review = updateComment(review, id, { status: c.status==='resolved'?'open':'resolved' }); }
+  save(); syncUpSoon(); renderComments(); buildNav();
+}
+function editCard(c){
+  const w = document.createElement('div'); let tag = c.tag;
+  w.innerHTML = `<div id="etags" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px"></div>
+    <textarea id="ebody" style="width:100%;border:.5px solid var(--accent);border-radius:6px;padding:7px;font:inherit;background:var(--bg);color:var(--text);min-height:54px;outline:none">${escapeHtml(c.body)}</textarea>
+    <div style="display:flex;gap:6px;margin-top:8px"><button class="btn btn-primary" id="esave" style="padding:5px 13px;font-size:12px">Save</button><button class="btn" id="ecancel" style="padding:5px 13px;font-size:12px">Cancel</button></div>`;
+  const tr = w.querySelector('#etags');
+  TAGS.forEach(t => { const b = document.createElement('button'); b.textContent = t;
+    b.style.cssText = 'font-size:11px;padding:2px 9px;border-radius:20px;border:.5px solid var(--border);color:var(--text-2);background:transparent';
+    const pick = () => { tag = t; [...tr.children].forEach(x => { x.style.background='transparent'; x.style.color='var(--text-2)'; x.style.borderColor='var(--border)'; }); b.style.background=`var(--${t}-bg)`; b.style.color=`var(--${t})`; b.style.borderColor='transparent'; };
+    b.onclick = pick; tr.appendChild(b); if (t === tag) pick(); });
+  w.querySelector('#ecancel').onclick = () => { editingId = null; renderComments(); };
+  w.querySelector('#esave').onclick = () => { review = updateComment(review, c.id, { body:w.querySelector('#ebody').value, tag }); editingId = null; save(); syncUpSoon(); renderComments(); buildNav(); };
+  return w;
 }
 function jumpTo(c){
   const q = (c.anchor.quote||'').replace(/\s+/g,' ').trim().slice(0,40);
