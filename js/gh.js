@@ -12,11 +12,12 @@ export const mergeReview = (local, remote) => {
 const API='https://api.github.com', OWNER='mattlmccoy', REPO='dissertation-tracker-data';
 const hdr = tok => ({ Authorization:`Bearer ${tok}`, Accept:'application/vnd.github+json' });
 export async function getJson(tok, path){
-  const r = await fetch(`${API}/repos/${OWNER}/${REPO}/contents/${path}`, { headers:hdr(tok) });
+  const r = await fetch(`${API}/repos/${OWNER}/${REPO}/contents/${path}?t=${Date.now()}`, { headers:hdr(tok), cache:'no-store' });
   if (r.status===404) return { json:null, sha:null };
   if (!r.ok) throw new Error('GitHub '+r.status);
   const d = await r.json();
-  const txt = decodeURIComponent(escape(atob((d.content||'').replace(/\s/g,''))));   // strip GitHub's base64 newlines (atob is strict on some mobile browsers)
+  if (typeof d.content !== 'string' || !d.content.trim()) throw new Error('empty content for '+path);
+  const txt = decodeURIComponent(escape(atob(d.content.replace(/\s/g,''))));   // strip GitHub's base64 newlines (atob is strict on some mobile browsers)
   return { json: JSON.parse(txt), sha:d.sha };
 }
 export async function putJson(tok, path, obj, sha, msg){

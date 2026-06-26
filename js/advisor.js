@@ -15,7 +15,7 @@ const deleteComment = (r, id) => ({ ...r, comments:r.comments.filter(c => c.id!=
 // --- data-repo I/O (self-contained) ---
 const _API='https://api.github.com', _OWNER='mattlmccoy', _REPO='dissertation-tracker-data';
 const _hdr = t => ({ Authorization:`Bearer ${t}`, Accept:'application/vnd.github+json' });
-async function getJson(t, path){ const r=await fetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${path}`,{headers:_hdr(t)}); if(r.status===404) return {json:null,sha:null}; if(!r.ok) throw new Error('GitHub '+r.status); const d=await r.json(); return {json:JSON.parse(decodeURIComponent(escape(atob((d.content||'').replace(/\s/g,''))))),sha:d.sha}; }
+async function getJson(t, path){ const r=await fetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${path}?t=${Date.now()}`,{headers:_hdr(t),cache:'no-store'}); if(r.status===404) return {json:null,sha:null}; if(!r.ok) throw new Error('GitHub '+r.status); const d=await r.json(); if(typeof d.content!=='string'||!d.content.trim()) throw new Error('empty content'); return {json:JSON.parse(decodeURIComponent(escape(atob(d.content.replace(/\s/g,''))))),sha:d.sha}; }
 async function putJson(t, path, obj, sha, msg){ const content=btoa(unescape(encodeURIComponent(JSON.stringify(obj,null,2)))); const r=await fetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${path}`,{method:'PUT',headers:_hdr(t),body:JSON.stringify({message:msg,content,sha:sha||undefined})}); if(!r.ok) throw new Error('put failed: '+r.status); return (await r.json()).content.sha; }
 
 const ADVISOR = window.ADVISOR || { id: '?', name: 'Reviewer' };
@@ -65,7 +65,7 @@ async function loadRelease(){
   const t = tok();
   if (location.hostname==='localhost'||location.hostname==='127.0.0.1'){ try { const r=await fetch('./release.json'); if(r.ok){ apply(await r.json()); return; } } catch(e){} }
   if (!t){ released = []; return; }
-  try { const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/release.json`,{ headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' } });
+  try { const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/release.json?t=${Date.now()}`,{ headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' });
     if (r.ok) apply(await r.json()); } catch(e){ released = []; }
   function apply(j){ released = (j?.[ADVISOR.id]?.released) || []; }
 }
@@ -77,7 +77,7 @@ async function loadChapter(ch){
   const dev = location.hostname==='localhost'||location.hostname==='127.0.0.1';
   if (dev){ try { const r=await fetch(`./chapters/${ch}.html`); if(r.ok){ renderDoc(await r.text()); return; } } catch(e){} }
   const t = tok(); if (!t){ renderConnect(); return; }
-  try { const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/content/${ch}.html`,{ headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' } });
+  try { const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/content/${ch}.html?t=${Date.now()}`,{ headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' });
     if (!r.ok) throw new Error('HTTP '+r.status); renderDoc(await r.text()); }
   catch(e){ read.innerHTML = `<div class="empty">Couldn't load Chapter ${chMeta(ch).n} (${e.message}). Check your access link.</div>`; }
 }
