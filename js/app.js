@@ -196,8 +196,8 @@ function renderComments(){
     const card = document.createElement('div'); card.className = 'ccard'; card.dataset.id = c.id;
     if (editingId === c.id){ card.style.cursor = 'default'; card.appendChild(editCard(c)); pane.appendChild(card); return; }
     const st = c.status;
-    const stColor = st==='staged'?'var(--info)':st==='merged'?'var(--success)':st==='resolved'?'var(--text-3)':'var(--text-2)';
-    const stBg = st==='staged'?'var(--info-bg)':st==='merged'?'var(--success-bg)':'transparent';
+    const stColor = st==='staged'?'var(--info)':st==='merged'?'var(--success)':st==='queued'?'var(--warn)':st==='resolved'?'var(--text-3)':'var(--text-2)';
+    const stBg = st==='staged'?'var(--info-bg)':st==='merged'?'var(--success-bg)':st==='queued'?'var(--warn-bg)':'transparent';
     card.innerHTML = `<div class="row">
         <span class="chip" style="background:var(--${c.tag}-bg);color:var(--${c.tag})">${c.tag}</span>
         <span class="cactions" style="margin-left:auto;display:none;gap:1px">
@@ -263,6 +263,8 @@ async function sendToClaude(){
     jobs.push({ id:'j_'+Date.now().toString(36), type:'apply-edits', chapter:current,
       comment_ids: open.map(c => c.id), status:'queued', requested_ts:new Date().toISOString() });
     await putJson(t, 'jobs.json', jobs, sha, 'review: queue '+current);
+    open.forEach(c => { review = updateComment(review, c.id, { status:'queued' }); });
+    save(); await syncUp(); renderComments(); buildNav();
     flash(`Queued ${open.length} comment${open.length>1?'s':''} → review-edits/${current}`);
   } catch(e){ flash('Send failed: '+e.message); }
 }
