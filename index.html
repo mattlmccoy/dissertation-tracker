@@ -94,7 +94,7 @@ iframe.spec{width:100%;height:74vh;border:none;border-radius:var(--r-md);backgro
       <button class="btn btn-primary" id="addBtn"><i class="ti ti-plus"></i>Task</button>
       <button class="icbtn" id="wirBtn" title="Week in review"><i class="ti ti-confetti"></i></button>
       <button class="icbtn" id="undoBtn" title="Undo" disabled><i class="ti ti-arrow-back-up"></i></button>
-      <a class="icbtn" href="./review.html" title="Open the reviewer"><i class="ti ti-book-2"></i></a>
+      <button class="icbtn" id="revBtn" title="Open the reviewer"><i class="ti ti-book-2"></i></button>
       <button class="icbtn" id="syncBtn" title="Sync with GitHub"><i class="ti ti-refresh"></i></button>
       <button class="icbtn" id="modeBtn" title="Light / dark"><i class="ti ti-moon"></i></button>
       <button class="icbtn" id="setBtn" title="Settings"><i class="ti ti-settings"></i></button>
@@ -448,6 +448,11 @@ window.addEventListener("keydown",e=>{
   const map={t:"today",w:"week",b:"board",k:"kanban",g:"gantt"};if(map[e.key]){VIEW=map[e.key];render()}
 });
 
+// reviewer entry — PIN gate so the obfuscated URL stays a convenience, not a memory test
+$("#revBtn").onclick=()=>{const dest=["review","18d933f6.html"].join("-");
+  if(localStorage.getItem("rev_ok")==="1"){location.href="./"+dest;return}
+  const p=prompt("Enter your reviewer PIN:");if(p===null)return;
+  if(p.trim()==="0514"){localStorage.setItem("rev_ok","1");location.href="./"+dest}else toast("Incorrect PIN",1)};
 applyMode();ghPull();
 </script>
 </body>

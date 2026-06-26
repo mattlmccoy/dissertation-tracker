@@ -558,9 +558,11 @@ function enterHome(){
   document.getElementById('topbar').innerHTML =
     `<strong style="font-size:16px;font-weight:600">Dissertation Reviewer</strong>
      <span style="margin-left:auto;font-size:12.5px;color:var(--text-2);display:inline-flex;align-items:center;gap:6px"><i class="ti ti-flag"></i>defense in ${daysToDefense()} days</span>
+     <button class="btn" id="btn-releases" style="padding:6px 12px"><i class="ti ti-users"></i>Advisor releases</button>
      <a class="icbtn" href="./index.html" title="Back to dashboard"><i class="ti ti-layout-dashboard"></i></a>
      <button class="icbtn" id="btn-theme"><i class="ti ti-moon"></i></button>`;
   document.getElementById('btn-theme').onclick = toggleTheme;
+  document.getElementById('btn-releases').onclick = openReleasePanel;
   read.innerHTML = homeHtml();
   read.querySelectorAll('[data-ch]').forEach(el => el.onclick = () => enterChapter(el.dataset.ch));
 }
@@ -594,8 +596,8 @@ function homeHtml(){
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px">${cards}</div></div>`;
 }
 
-// ---------- history / version diff (reads phd-dissertation) ----------
-const DISS_REPO = 'mattlmccoy/phd-dissertation';
+// ---------- history / version timeline (data repo content commits — readable with the data-repo token) ----------
+const HIST_REPO = 'mattlmccoy/dissertation-tracker-data';
 async function ghApi(t, path){
   const r = await fetch('https://api.github.com/' + path, { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github+json' } });
   if (!r.ok) throw new Error('HTTP '+r.status); return r.json();
@@ -604,14 +606,15 @@ async function showHistory(){
   const t = tok();
   document.getElementById('nav').style.display = 'none';
   document.getElementById('comments').style.display = 'none';
-  if (!t){ read.innerHTML = `<div class="empty"><div style="font-size:15px;font-weight:500">History needs your access token</div><div style="font-size:13px;color:var(--text-2);margin-top:6px">Open a chapter and add a token with read access to <code>${DISS_REPO}</code>.</div></div>`; return; }
+  if (!t){ read.innerHTML = `<div class="empty"><div style="font-size:15px;font-weight:500">History needs your access token</div><div style="font-size:13px;color:var(--text-2);margin-top:6px">Open a chapter and add your data-repo token first.</div></div>`; return; }
+  if (!current){ read.innerHTML = `<div class="empty">Open a chapter first, then view its history.</div>`; return; }
   read.innerHTML = `<div class="empty">Loading history…</div>`;
-  const file = `chapters/${current}.tex`;
+  const file = `content/${current}.html`;
   try {
-    const commits = await ghApi(t, `repos/${DISS_REPO}/commits?path=${encodeURIComponent(file)}&per_page=14`);
-    if (!commits.length){ read.innerHTML = `<div class="empty">No commit history for ${file}.</div>`; return; }
+    const commits = await ghApi(t, `repos/${HIST_REPO}/commits?path=${encodeURIComponent(file)}&per_page=20`);
+    if (!commits.length){ read.innerHTML = `<div class="empty">No revision history recorded for this chapter yet.</div>`; return; }
     renderHistoryShell(commits, file); selectCommit(commits[0].sha, file);
-  } catch(e){ read.innerHTML = `<div class="empty">Couldn't load history from ${DISS_REPO} — your token may not include it (${e.message}).</div>`; }
+  } catch(e){ read.innerHTML = `<div class="empty">Couldn't load history (${e.message}).</div>`; }
 }
 function renderHistoryShell(commits, file){
   const m = chMeta(current);
@@ -634,13 +637,20 @@ function renderHistoryShell(commits, file){
 }
 async function selectCommit(sha, file){
   document.querySelectorAll('.hcommit').forEach(el => el.style.background = el.dataset.sha === sha ? 'var(--accent-bg)' : 'transparent');
-  const diff = document.getElementById('hist-diff'); diff.innerHTML = 'Loading diff…';
+  const diff = document.getElementById('hist-diff'); diff.innerHTML = 'Loading…';
   try {
-    const detail = await ghApi(tok(), `repos/${DISS_REPO}/commits/${sha}`);
-    const f = (detail.files||[]).find(x => x.filename === file);
-    diff.innerHTML = `<div style="font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--text-3);margin-bottom:10px">${file}</div>` +
-      (f && f.patch ? renderPatch(f.patch) : `<div style="color:var(--text-3)">No textual change to this file in the commit.</div>`);
-  } catch(e){ diff.innerHTML = `<div style="color:var(--text-3)">Couldn't load diff (${e.message}).</div>`; }
+    const detail = await ghApi(tok(), `repos/${HIST_REPO}/commits/${sha}`);
+    const f = (detail.files||[]).find(x => x.filename === file) || {};
+    const d = new Date(detail.commit.author.date);
+    diff.innerHTML = `
+      <div style="font-size:13px;color:var(--text-3);margin-bottom:4px">${d.toLocaleString()} · ${escapeHtml(detail.commit.author.name)} · ${sha.slice(0,7)}</div>
+      <div style="font-size:15px;font-weight:600;white-space:pre-wrap;margin-bottom:12px">${escapeHtml(detail.commit.message)}</div>
+      <div style="display:flex;gap:14px;font-size:12.5px;color:var(--text-2)">
+        <span><b style="color:var(--success)">+${f.additions||0}</b> added</span>
+        <span><b style="color:var(--danger)">−${f.deletions||0}</b> removed</span>
+        <span>${f.changes||0} total changes to this chapter's content</span></div>
+      <div style="font-size:12px;color:var(--text-3);margin-top:16px;border-top:.5px solid var(--border);padding-top:12px">This timeline records when each chapter was (re)published from the LaTeX source. The rendered content above always reflects the latest published version.</div>`;
+  } catch(e){ diff.innerHTML = `<div style="color:var(--text-3)">Couldn't load this revision (${e.message}).</div>`; }
 }
 function renderPatch(patch){
   return `<div style="font-family:ui-monospace,Menlo,monospace;font-size:12px;line-height:1.7;border:.5px solid var(--border);border-radius:var(--r-md);overflow:hidden">` +
@@ -729,11 +739,12 @@ function openMoreMenu(){
   menu.style.cssText = 'position:absolute;top:50px;right:14px;z-index:45;background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-md);box-shadow:0 10px 30px rgba(0,0,0,.16);padding:6px;min-width:220px';
   const hasTok = !!tok();
   menu.innerHTML = `
+    <div class="mmi" data-act="release"><i class="ti ti-users"></i>Release to advisors…</div>
     <div class="mmi" data-act="help"><i class="ti ti-keyboard"></i>Buttons & shortcuts</div>
     <div class="mmi" data-act="token"><i class="ti ti-key"></i>Access token${hasTok?' <span style="color:var(--success);font-size:11px;margin-left:auto">connected</span>':' <span style="color:var(--warn);font-size:11px;margin-left:auto">not set</span>'}</div>
     <div class="mmi" data-act="dash"><i class="ti ti-layout-dashboard"></i>Back to dashboard</div>`;
   document.body.appendChild(menu);
-  const acts = { help: toggleHelp, token: manageToken, dash: () => location.href = './index.html' };
+  const acts = { release: openReleasePanel, help: toggleHelp, token: manageToken, dash: () => location.href = './index.html' };
   menu.querySelectorAll('.mmi').forEach(el => { el.onmouseenter = () => el.style.background='var(--bg-3)'; el.onmouseleave = () => el.style.background='transparent';
     el.onclick = () => { menu.remove(); acts[el.dataset.act](); }; });
   setTimeout(() => document.addEventListener('click', function h(e){ if (!menu.contains(e.target) && e.target.id!=='btn-more' && !e.target.closest?.('#btn-more')){ menu.remove(); document.removeEventListener('click', h); } }), 0);
@@ -744,6 +755,32 @@ function manageToken(){
   if (v === null) return;
   if (v.trim() === ''){ if (cur && confirm('Remove the saved access token from this browser?')){ localStorage.removeItem('ghpat'); flash('Token removed.'); } return; }
   localStorage.setItem('ghpat', v.trim()); flash('Token saved.'); if (document.getElementById('doc') || current) loadChapter(current);
+}
+// ---------- release gate: control which chapters each advisor's portal shows ----------
+async function openReleasePanel(){
+  const t = tok(); if (!t){ flash('Add your access token first.'); return; }
+  document.getElementById('relov')?.remove();
+  const ov = document.createElement('div'); ov.id = 'relov';
+  ov.innerHTML = `<div class="rel-card"><div class="rel-h">Release chapters to advisors<button class="icbtn" id="rel-x" style="margin-left:auto"><i class="ti ti-x"></i></button></div><div id="rel-body" style="font-size:13px;color:var(--text-3)">Loading…</div></div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#rel-x').onclick = () => ov.remove();
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  let rel, sha;
+  try { const r = await getJson(t, 'release.json'); rel = r.json || {}; sha = r.sha; }
+  catch(e){ ov.querySelector('#rel-body').textContent = 'Could not load release.json ('+e.message+').'; return; }
+  const advs = Object.keys(rel).filter(k => k !== '_comment');
+  const base = location.origin + location.pathname.replace(/[^/]+$/, '');
+  const rows = CHAPTERS.map(c => `<tr><td>${c.n}. ${escapeHtml(shortTitle(c.title))}</td>${advs.map(a => `<td style="text-align:center"><input type="checkbox" data-a="${a}" data-ch="${c.id}" ${(rel[a].released||[]).includes(c.id)?'checked':''}></td>`).join('')}</tr>`).join('');
+  ov.querySelector('#rel-body').innerHTML = `
+    <table class="rel-tbl"><thead><tr><th>Chapter</th>${advs.map(a => `<th>${escapeHtml(a)}<div style="font-weight:400;font-size:10px;color:var(--text-3)">${escapeHtml(rel[a].name||a)}</div></th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>
+    <div class="rel-links">${advs.map(a => `<div><b>${escapeHtml(rel[a].name||a)}</b> → <code>${escapeHtml(base+a+'.html')}</code></div>`).join('')}</div>
+    <div style="display:flex;gap:8px;margin-top:14px;align-items:center"><button class="btn btn-primary" id="rel-save">Save &amp; publish</button><span id="rel-stat" style="font-size:12px;color:var(--text-3)"></span></div>`;
+  ov.querySelector('#rel-save').onclick = async () => {
+    advs.forEach(a => { rel[a].released = [...ov.querySelectorAll(`input[data-a="${a}"]:checked`)].map(x => x.dataset.ch); });
+    const stat = ov.querySelector('#rel-stat'); stat.textContent = 'Publishing…';
+    try { await putJson(t, 'release.json', rel, sha, 'release: update advisor chapter gate'); stat.textContent = 'Published ✓'; setTimeout(() => ov.remove(), 700); }
+    catch(e){ stat.textContent = 'Failed: ' + e.message; }
+  };
 }
 window.addEventListener('keydown', e => {
   const pop = document.getElementById('pop');
