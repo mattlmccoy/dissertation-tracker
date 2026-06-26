@@ -191,14 +191,19 @@ function renderComments(){
   if(!review.comments.length){ pane.innerHTML+=`<div style="font-size:12.5px;color:var(--text-3);padding:8px 2px">Select text or click a figure to leave a comment or suggest an edit.</div>`; return; }
   review.comments.forEach(c=>{ const card=document.createElement('div'); card.className='ccard'; card.dataset.id=c.id;
     if(editingId===c.id){ card.appendChild(editCard(c)); pane.appendChild(card); return; }
-    const st=c.status; const submitted=st==='submitted';
+    const st=c.status; const resolved=st==='resolved'; const submitted=st==='submitted';
+    const stBadge = resolved ? '<span class="status" style="color:var(--text-3)">resolved</span>'
+      : submitted ? '<span class="status" style="background:var(--success-bg);color:var(--success)">submitted</span>' : '<span class="status" style="display:none"></span>';
     card.innerHTML=`<div class="row"><span class="chip" style="background:var(--accent-bg);color:var(--accent)">${c.kind==='figure'?'<i class="ti ti-photo" style="font-size:11px;margin-right:2px"></i>':c.kind==='suggestion'?'<i class="ti ti-pencil" style="font-size:11px;margin-right:2px"></i>':''}${c.tag}</span>
-        <span class="cactions" style="margin-left:auto;display:none;gap:1px">${submitted?'':`<button class="icbtn cact" data-act="edit" style="width:25px;height:25px;font-size:14px"><i class="ti ti-pencil"></i></button><button class="icbtn cact" data-act="del" style="width:25px;height:25px;font-size:14px"><i class="ti ti-trash"></i></button>`}</span>
-        <span class="status" style="${submitted?'background:var(--success-bg);color:var(--success)':'display:none'}">${submitted?'submitted':''}</span></div>
-      <div class="snip">"${escapeHtml((c.anchor.quote||'').slice(0,52))}"</div><div class="body">${escapeHtml(c.body)}</div>${suggHtml(c)}`;
+        <span class="cactions" style="margin-left:auto;display:none;gap:1px">
+          <button class="icbtn cact" data-act="resolve" title="${resolved?'Reopen':'Resolve'}" style="width:25px;height:25px;font-size:14px"><i class="ti ti-${resolved?'rotate-clockwise':'check'}"></i></button>
+          <button class="icbtn cact" data-act="edit" title="Edit" style="width:25px;height:25px;font-size:14px"><i class="ti ti-pencil"></i></button>
+          <button class="icbtn cact" data-act="del" title="Delete" style="width:25px;height:25px;font-size:14px"><i class="ti ti-trash"></i></button></span>
+        ${stBadge}</div>
+      <div class="snip">"${escapeHtml((c.anchor.quote||'').slice(0,52))}"</div><div class="body" style="${resolved?'opacity:.5;text-decoration:line-through':''}">${escapeHtml(c.body)}</div>${suggHtml(c)}`;
     if(c.id===activeId) card.classList.add('active');
-    card.onmouseenter=()=>{ card.querySelector('.cactions').style.display='flex'; document.querySelector(`#doc .cmark[data-id="${c.id}"]`)?.classList.add('cmark-hot'); };
-    card.onmouseleave=()=>{ card.querySelector('.cactions').style.display='none'; document.querySelector(`#doc .cmark[data-id="${c.id}"]`)?.classList.remove('cmark-hot'); };
+    card.onmouseenter=()=>{ card.querySelector('.cactions').style.display='flex'; const s=card.querySelector('.status'); if(s&&s.textContent) s.style.visibility='hidden'; document.querySelector(`#doc .cmark[data-id="${c.id}"]`)?.classList.add('cmark-hot'); };
+    card.onmouseleave=()=>{ card.querySelector('.cactions').style.display='none'; const s=card.querySelector('.status'); if(s) s.style.visibility=''; document.querySelector(`#doc .cmark[data-id="${c.id}"]`)?.classList.remove('cmark-hot'); };
     card.querySelector('.snip').onclick=()=>jumpTo(c); card.querySelector('.body').onclick=()=>jumpTo(c);
     card.querySelectorAll('.cact').forEach(b=>b.onclick=e=>{ e.stopPropagation(); commentAction(c.id,b.dataset.act); });
     pane.appendChild(card); });
@@ -206,6 +211,7 @@ function renderComments(){
 function commentAction(id,act){ const c=review.comments.find(x=>x.id===id); if(!c) return;
   if(act==='edit'){ editingId=id; renderComments(); return; }
   if(act==='del'){ if(!confirm('Delete this comment?')) return; review=deleteComment(review,id); }
+  else if(act==='resolve'){ review=updateComment(review,id,{status: c.status==='resolved'?'open':'resolved'}); }
   save(); syncUpSoon(); renderComments(); buildNav(); paintHighlights(); }
 function editCard(c){ const w=document.createElement('div');
   w.innerHTML=`<textarea id="ebody" style="width:100%;border:.5px solid var(--accent);border-radius:6px;padding:7px;font:inherit;background:var(--bg);color:var(--text);min-height:54px;outline:none">${escapeHtml(c.body)}</textarea>
