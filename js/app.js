@@ -1,6 +1,6 @@
 import { newReview, addComment, updateComment, deleteComment } from './model.js';
 import { anchorFromSelection } from './anchor.js';
-import { reviewPath, mergeReview, getJson, putJson, ghTree } from './gh.js';
+import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl } from './gh.js';
 
 const DATA_REPO = 'mattlmccoy/dissertation-tracker-data';
 const CHAPTERS = [
@@ -206,7 +206,7 @@ function wireFigures(doc){
       const rects = [{ x:fr.x-rr.x, y:fr.y-rr.y+read.scrollTop, w:fr.width, h:fr.height }];
       pending = { quote: info.label ? `${info.label}${info.quote?': '+info.quote:''}` : (info.quote || 'Figure'),
                   kind:'figure', figure:info.id, section: headingFor(fig), confirmed:true, rects:[] };
-      showPopover(pending, rects, 'figure');
+      showPopover(pending, rects, 'figure', fig);
     });
   });
 }
@@ -313,7 +313,7 @@ function headingFor(node){
     while (p){ if (/^H[1-3]$/.test(p.tagName)) return p.textContent.trim(); p = p.previousElementSibling; } el = el.parentElement; }
   return '';
 }
-function showPopover(anchor, rects, defaultTag='claim'){
+function showPopover(anchor, rects, defaultTag='claim', figEl=null){
   document.getElementById('pop')?.remove();
   const top = Math.max(...rects.map(r => r.y + r.h)) + 10;
   const isFig = anchor.kind === 'figure';
@@ -326,6 +326,7 @@ function showPopover(anchor, rects, defaultTag='claim'){
       <span class="loc"><i class="ti ti-circle-check-filled"></i>${anchor.section ? '§ '+anchor.section.slice(0,38) : (isFig?'this figure':'this passage')}</span></div>
     <div class="snip" id="psnip">"${escapeHtml(anchor.quote.slice(0,150))}"</div>
     ${modes}
+    ${isFig && figEl ? `<button class="btn figdraw-btn" id="figdraw"><i class="ti ti-pencil"></i>Draw on the figure</button>` : ''}
     <textarea id="crepl" class="crepl" style="display:none"></textarea>
     <div class="tags" id="tags"></div>
     <textarea id="cbody" placeholder="Leave a comment…  (1–5 to tag · ⌘↵ to save)"></textarea>
@@ -360,8 +361,66 @@ function showPopover(anchor, rects, defaultTag='claim'){
     save(); syncUpSoon(); renderComments(); buildNav(); paintHighlights(); pop.remove(); window.getSelection().removeAllRanges(); };
   pop.querySelector('#ccancel').onclick = close;
   saveBtn.onclick = commit;
+  pop.querySelector('#figdraw')?.addEventListener('click', () => { pop.remove(); openFigureMarkup(figEl, anchor); });
   pop._commit = commit; pop._pickTag = i => { const b = tr.children[i]; if (b) b.click(); };
   pop._setMode = setMode;
+}
+// ---------- draw-on-figure markup (capture-only: composites figure + strokes → PNG) ----------
+const markupCache = {};   // path -> dataURL, so a freshly-drawn markup shows instantly
+function openFigureMarkup(fig, anchor){
+  document.getElementById('pop')?.remove();
+  const img = fig.querySelector('img') || fig;
+  const ir = img.getBoundingClientRect();
+  const W = Math.max(40, Math.round(ir.width)), H = Math.max(40, Math.round(ir.height));
+  const ov = document.createElement('div'); ov.id = 'figmk'; ov.className = 'figmk-back';
+  ov.innerHTML = `<div class="figmk-modal">
+    <div class="figmk-tools">
+      <button class="figmk-pen on" data-c="#e5484d" title="Mark to remove / don't want">remove</button>
+      <button class="figmk-pen" data-c="#30a46c" title="Mark to add / want">add</button>
+      <span class="figmk-sep"></span>
+      <button class="figmk-undo">Undo</button><button class="figmk-clear">Clear</button>
+      <span class="figmk-hint">red = remove · green = add</span></div>
+    <div class="figmk-stage" style="width:${W}px;height:${H}px">
+      <img class="figmk-img" src="${img.src}" width="${W}" height="${H}" crossorigin="anonymous">
+      <canvas class="figmk-canvas" width="${W}" height="${H}"></canvas></div>
+    <textarea class="figmk-note" rows="2" placeholder="Describe the change you want…"></textarea>
+    <div class="figmk-actions"><button class="btn btn-primary figmk-save">Save markup</button><button class="btn figmk-cancel">Cancel</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  const canvas = ov.querySelector('.figmk-canvas'), ctx = canvas.getContext('2d');
+  let color = '#e5484d', drawing = false, strokes = [], cur = null;
+  const redraw = () => { ctx.clearRect(0,0,W,H); ctx.lineCap='round'; ctx.lineJoin='round'; ctx.lineWidth=3;
+    strokes.forEach(s => { ctx.strokeStyle=s.color; ctx.beginPath(); s.points.forEach((p,i) => i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1])); ctx.stroke(); }); };
+  const pos = e => { const r = canvas.getBoundingClientRect(); return [ (e.clientX-r.left)*(W/r.width), (e.clientY-r.top)*(H/r.height) ]; };
+  canvas.addEventListener('pointerdown', e => { drawing=true; cur={color,points:[pos(e)]}; strokes.push(cur); canvas.setPointerCapture(e.pointerId); });
+  canvas.addEventListener('pointermove', e => { if (!drawing) return; cur.points.push(pos(e)); redraw(); });
+  canvas.addEventListener('pointerup', () => { drawing=false; });
+  ov.querySelectorAll('.figmk-pen').forEach(b => b.onclick = () => { color=b.dataset.c; ov.querySelectorAll('.figmk-pen').forEach(x => x.classList.toggle('on', x===b)); });
+  ov.querySelector('.figmk-undo').onclick = () => { strokes.pop(); redraw(); };
+  ov.querySelector('.figmk-clear').onclick = () => { strokes=[]; redraw(); };
+  ov.querySelector('.figmk-cancel').onclick = () => ov.remove();
+  ov.querySelector('.figmk-save').onclick = async () => {
+    if (!strokes.length){ flash('Draw on the figure first, or Cancel.'); return; }
+    const note = ov.querySelector('.figmk-note').value.trim();
+    let b64 = null;
+    try { const ex = document.createElement('canvas'); ex.width=W; ex.height=H; const ec = ex.getContext('2d');
+      ec.drawImage(ov.querySelector('.figmk-img'), 0,0, W,H); ec.drawImage(canvas, 0,0);
+      const dataUrl = ex.toDataURL('image/png'); b64 = dataUrl.split(',')[1];
+      review = addComment(review, { anchor, kind:'figure', tag:'figure', body:note });
+      const c = review.comments[review.comments.length-1];
+      const path = `markups/${c.id}.png`; markupCache[path] = dataUrl;
+      review = updateComment(review, c.id, { markup:{ path, ts:new Date().toISOString() } });
+      save(); renderComments(); buildNav(); paintHighlights(); ov.remove();
+      const t = tok();
+      if (t){ await putFile(t, path, b64, `markup: figure comment ${c.id}`); await syncUp(); flash('Markup saved.'); }
+      else flash('Markup saved locally — connect to upload it.');
+    } catch(e){ flash('Markup upload failed: '+e.message); }
+  };
+}
+function loadMarkupThumb(el, path){
+  if (markupCache[path]){ el.querySelector('img').src = markupCache[path]; return; }
+  const t = tok(); if (!t) return;
+  getDataUrl(t, path).then(u => { markupCache[path] = u; const img = el.querySelector('img'); if (img) img.src = u; }).catch(() => {});
 }
 
 // ---------- comments rail ----------
@@ -431,6 +490,7 @@ function buildCommentCard(c){
         <span class="status" style="background:${stBg};color:${stColor};${st==='open'?'display:none':''}">${st}</span></div>
       <div class="snip">"${escapeHtml((c.anchor.quote||'').slice(0,52))}"</div>
       <div class="body" style="${st==='resolved'?'opacity:.5;text-decoration:line-through':''}">${escapeHtml(c.body)}</div>
+      ${c.markup ? `<div class="cmarkup" data-path="${escapeHtml(c.markup.path)}" title="Your markup"><img alt="figure markup"></div>` : ''}
       ${suggHtml(c)}
       ${c.claude?.response ? `<div class="cresp"><div class="cresp-h"><i class="ti ti-robot-face"></i>Claude</div>${escapeHtml(c.claude.response)}</div>` : ''}
       ${c.claude?.branch ? `<div class="branch"><i class="ti ti-git-branch"></i>${escapeHtml(c.claude.branch)}</div>` : ''}
@@ -442,6 +502,7 @@ function buildCommentCard(c){
     card.onmouseleave = () => { card.querySelector('.cactions').style.display='none'; const s=card.querySelector('.status'); if (s) s.style.visibility=''; document.querySelector(`#doc .cmark[data-id="${c.id}"]`)?.classList.remove('cmark-hot'); };
     card.querySelector('.snip').onclick = () => jumpTo(c);
     card.querySelector('.body').onclick = () => jumpTo(c);
+    if (c.markup) loadMarkupThumb(card.querySelector('.cmarkup'), c.markup.path);
     card.querySelectorAll('.cact').forEach(b => b.onclick = e => { e.stopPropagation(); commentAction(c.id, b.dataset.act); });
     const ro = card.querySelector('.creply-open');
     if (ro){ const form = card.querySelector('.creply-form');
