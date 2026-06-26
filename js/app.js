@@ -1029,22 +1029,34 @@ async function selectCommit(sha, file){
     diff.innerHTML = `
       <div style="font-size:13px;color:var(--text-3);margin-bottom:4px">${d.toLocaleString()} · ${escapeHtml(detail.commit.author.name)} · ${sha.slice(0,7)}</div>
       <div style="font-size:15px;font-weight:600;white-space:pre-wrap;margin-bottom:12px">${escapeHtml(detail.commit.message)}</div>
-      <div style="display:flex;gap:14px;font-size:12.5px;color:var(--text-2)">
+      <div style="display:flex;gap:14px;font-size:12.5px;color:var(--text-2);margin-bottom:14px">
         <span><b style="color:var(--success)">+${f.additions||0}</b> added</span>
         <span><b style="color:var(--danger)">−${f.deletions||0}</b> removed</span>
-        <span>${f.changes||0} total changes to this chapter's content</span></div>
-      <div style="font-size:12px;color:var(--text-3);margin-top:16px;border-top:.5px solid var(--border);padding-top:12px">This timeline records when each chapter was (re)published from the LaTeX source. The rendered content above always reflects the latest published version.</div>`;
+        <span>${f.changes||0} line${f.changes===1?'':'s'} changed</span></div>
+      <div style="font-size:11px;letter-spacing:.05em;color:var(--text-3);margin-bottom:7px">WHAT CHANGED · removed text in red, added in green</div>
+      ${renderPatch(f.patch)}
+      <div style="font-size:12px;color:var(--text-3);margin-top:16px;border-top:.5px solid var(--border);padding-top:12px">Diff of the chapter's published text; figure/image swaps show as a single line. The reading view above always reflects the latest published version.</div>`;
   } catch(e){ diff.innerHTML = `<div style="color:var(--text-3)">Couldn't load this revision (${e.message}).</div>`; }
 }
+// readable old-vs-new diff of the chapter's published text: strip HTML tags so prose shows,
+// collapse the giant base64 image lines, keep red (removed) / green (added)
 function renderPatch(patch){
-  return `<div style="font-family:ui-monospace,Menlo,monospace;font-size:12px;line-height:1.7;border:.5px solid var(--border);border-radius:var(--r-md);overflow:hidden">` +
-    patch.split('\n').slice(0,500).map(l => { const c = l[0];
-      if (l.startsWith('@@')) return `<div style="padding:3px 12px;background:var(--bg-3);color:var(--text-3)">${escapeHtml(l)}</div>`;
-      if (l.startsWith('+++')||l.startsWith('---')||l.startsWith('diff ')||l.startsWith('index ')) return '';
-      if (c === '+') return `<div style="padding:1px 12px;background:var(--success-bg);color:var(--success)">${escapeHtml(l)}</div>`;
-      if (c === '-') return `<div style="padding:1px 12px;background:var(--citation-bg);color:var(--citation)">${escapeHtml(l)}</div>`;
-      return `<div style="padding:1px 12px;color:var(--text-2)">${escapeHtml(l)}</div>`;
-    }).join('') + `</div>`;
+  if (!patch) return `<div style="color:var(--text-3);font-size:12.5px;padding:4px 0">No line-level diff is available for this revision — the change was too large for GitHub to inline (often a figure/image swap).</div>`;
+  const rows = []; let lastEllipsis = false;
+  patch.split('\n').slice(0, 900).forEach(l => {
+    if (l.startsWith('+++') || l.startsWith('---') || l.startsWith('diff ') || l.startsWith('index ')) return;
+    if (l.startsWith('@@')){ if (!lastEllipsis){ rows.push(`<div class="hd-gap">⋯</div>`); lastEllipsis = true; } return; }
+    const c = l[0], rest = l.slice(1);
+    if (l.length > 240){ rows.push(`<div class="hd-img">${c==='+'?'＋':c==='-'?'－':' '} (embedded image or long block changed)</div>`); lastEllipsis = false; return; }
+    const text = escapeHtml(rest.replace(/<[^>]*>/g, '').replace(/&[a-z]+;/g,' ').trim());
+    if (!text){ return; }                                  // tag-only / blank line — skip
+    lastEllipsis = false;
+    if (c === '+') rows.push(`<div class="hd-add">+ ${text}</div>`);
+    else if (c === '-') rows.push(`<div class="hd-del">− ${text}</div>`);
+    else rows.push(`<div class="hd-ctx">${text}</div>`);
+  });
+  const body = rows.join('') || `<div style="padding:10px;color:var(--text-3)">No textual changes in this revision (formatting or image only).</div>`;
+  return `<div class="hdiff">${body}</div>`;
 }
 
 // ---------- global search (across the dissertation) ----------

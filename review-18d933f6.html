@@ -131,6 +131,14 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;pad
 .pmodes button{flex:1;padding:4px 6px;border-radius:5px;font-size:11.5px;color:var(--text-2)}
 .pmodes button.on{background:var(--bg);color:var(--text);font-weight:500;box-shadow:0 1px 2px rgba(0,0,0,.06)}
 .popover textarea.crepl{width:100%;border:.5px solid var(--suggest);border-radius:var(--r-sm);padding:8px 10px;font:inherit;background:var(--bg);color:var(--text);resize:vertical;min-height:44px;outline:none;margin-bottom:8px}
+/* chapter history — old-vs-new diff */
+.hdiff{border:.5px solid var(--border);border-radius:var(--r-md);overflow:hidden;font-size:13px;line-height:1.55}
+.hdiff > div{padding:2px 12px}
+.hdiff .hd-add{background:var(--success-bg);color:var(--success)}
+.hdiff .hd-del{background:var(--citation-bg);color:var(--citation)}
+.hdiff .hd-ctx{color:var(--text-2)}
+.hdiff .hd-gap{background:var(--bg-3);color:var(--text-3);text-align:center;font-size:11px;letter-spacing:.2em}
+.hdiff .hd-img{color:var(--text-3);font-style:italic}
 /* inbox / triage panel on the home screen */
 .ibx{border:.5px solid var(--border);border-radius:var(--r-lg);padding:16px 18px;margin-bottom:26px}
 .ibx-head{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-bottom:13px}
