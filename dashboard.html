@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dissertation Dashboard</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.7.0/dist/tabler-icons.min.css">
+<style>
+/* Claude/Anthropic aesthetic — shared with the reviewer (review.html) */
+:root{
+  --bg:#ffffff; --bg-2:#faf9f7; --bg-3:#f1efe9; --text:#1f1e1c; --text-2:#605e58; --text-3:#8f8d84;
+  --border:rgba(0,0,0,.10); --border-2:rgba(0,0,0,.16); --accent:#2c64c4; --accent-bg:#eaf1fb;
+  --success:#0f6e56; --success-bg:#e1f5ee; --warn:#9a6a12; --warn-bg:#faf0d8; --danger:#b3261e; --danger-bg:#fbeae8;
+  --p0:#b3261e; --p1:#9a6a12; --p2:#605e58;
+  --r-sm:7px; --r-md:9px; --r-lg:13px;
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+}
+.dark{
+  --bg:#1b1a18; --bg-2:#222120; --bg-3:#2b2a27; --text:#f4f2ec; --text-2:#b1afa6; --text-3:#85837b;
+  --border:rgba(255,255,255,.12); --border-2:rgba(255,255,255,.20); --accent:#6aa0ec; --accent-bg:#1b2c44;
+  --success:#69c6a3; --success-bg:#11362c; --warn:#e0b15e; --warn-bg:#3a2f17; --danger:#e8857d; --danger-bg:#3a1f1d;
+  --p0:#e8857d; --p1:#e0b15e; --p2:#b1afa6;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;padding:0}
+.icbtn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:var(--r-md);color:var(--text-2)}
+.icbtn:hover{background:var(--bg-3);color:var(--text)}
+.btn{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border:.5px solid var(--border-2);border-radius:var(--r-md);font-size:13px;font-weight:500}
+.btn:hover{background:var(--bg-2)} .btn-primary{background:var(--text);color:var(--bg);border-color:transparent}
+.btn-primary:hover{opacity:.9}
+.chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:2px 9px;border-radius:20px;border:.5px solid var(--border)}
+.wrap{max-width:1080px;margin:0 auto;padding:22px 22px 80px}
+/* header */
+header.top{display:flex;align-items:center;gap:14px;border-bottom:.5px solid var(--border);padding-bottom:18px;margin-bottom:18px;flex-wrap:wrap}
+.brand .kick{font-size:11px;letter-spacing:.08em;color:var(--text-3)}
+.brand h1{font-size:21px;font-weight:600;letter-spacing:-.01em;margin:2px 0 0}
+.cd{margin-left:auto;text-align:right} .cd .num{font-size:26px;font-weight:600;line-height:1} .cd .num.warn{color:var(--warn)}
+.cd .lbl{font-size:11px;color:var(--text-2)}
+/* toolbar */
+.toolbar{display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.search{flex:1;min-width:200px;max-width:380px;display:flex;align-items:center;gap:8px;height:36px;padding:0 12px;border:.5px solid var(--border);border-radius:var(--r-md);background:var(--bg);color:var(--text-3)}
+.search input{flex:1;border:none;background:none;outline:none;font:inherit;color:var(--text)}
+.tabs{display:flex;gap:2px;background:var(--bg-3);border-radius:var(--r-md);padding:3px}
+.tab{padding:5px 11px;border-radius:6px;font-size:13px;color:var(--text-2)}
+.tab.active{background:var(--bg);color:var(--text);font-weight:500;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.sel{font:inherit;font-size:12.5px;color:var(--text-2);background:var(--bg);border:.5px solid var(--border);border-radius:var(--r-sm);padding:6px 8px;outline:none}
+/* analytics strip */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
+.stat{border:.5px solid var(--border);border-radius:var(--r-lg);padding:13px 15px;background:var(--bg-2)}
+.stat .v{font-size:22px;font-weight:600} .stat .k{font-size:11.5px;color:var(--text-2);margin-top:2px}
+.stat .sub{font-size:11px;color:var(--text-3);margin-top:4px}
+/* phase filter chips */
+.chips{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:16px}
+.fchip{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;padding:5px 11px;border-radius:20px;border:.5px solid var(--border);color:var(--text-2)}
+.fchip i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.fchip.on{border-color:var(--accent);color:var(--accent);background:var(--accent-bg)}
+.fchip .n{font-size:10.5px;color:var(--text-3)}
+/* task cards */
+.group h2{font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px;margin:18px 0 10px}
+.group h2 .cnt{font-size:11.5px;font-weight:400;color:var(--text-3)}
+.task{display:flex;gap:11px;align-items:flex-start;border:.5px solid var(--border);border-left:2.5px solid var(--lc,var(--p2));border-radius:var(--r-md);padding:11px 13px;margin-bottom:8px;background:var(--bg);cursor:pointer}
+.task:hover{border-color:var(--border-2)} .task.done{opacity:.6}
+.check{flex:0 0 auto;width:18px;height:18px;border-radius:50%;border:1.5px solid var(--border-2);margin-top:1px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:transparent;font-size:12px}
+.check.on{background:var(--success);border-color:var(--success);color:#fff}
+.task.done .ttitle{text-decoration:line-through}
+.ttitle{font-size:14px;font-weight:500;line-height:1.4}
+.tmeta{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center}
+.tnote{font-size:12.5px;color:var(--text-2);margin-top:6px}
+.empty{color:var(--text-3);font-size:13px;padding:22px;text-align:center;border:.5px dashed var(--border);border-radius:var(--r-md)}
+/* toast */
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:9px 16px;border-radius:20px;font-size:13px;z-index:60;opacity:0;pointer-events:none;transition:opacity .2s;box-shadow:0 6px 20px rgba(0,0,0,.2)}
+.toast.on{opacity:1} .toast.err{background:var(--danger)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--success);display:inline-block} .dot.dirty{background:var(--warn)}
+.banner{background:var(--warn-bg);color:var(--warn);border-radius:var(--r-md);padding:9px 13px;font-size:12.5px;margin-bottom:14px;display:flex;gap:8px;align-items:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <div class="kick">RFAM · Georgia Tech ME</div>
+      <h1>Dissertation Dashboard</h1>
+    </div>
+    <div class="cd"><div class="num" id="cdNum">—</div><div class="lbl">days to defense · <b id="cdDate">—</b></div></div>
+    <div style="display:flex;gap:3px;align-items:center">
+      <a class="icbtn" href="./review.html" title="Open the reviewer"><i class="ti ti-book-2"></i></a>
+      <button class="icbtn" id="syncBtn" title="Sync with GitHub"><i class="ti ti-refresh"></i></button>
+      <button class="icbtn" id="modeBtn" title="Light / dark"><i class="ti ti-moon"></i></button>
+      <button class="icbtn" id="setBtn" title="Settings"><i class="ti ti-settings"></i></button>
+    </div>
+  </header>
+
+  <div id="needtok" class="banner" style="display:none"><i class="ti ti-key"></i><span>Add a GitHub token to load and sync your tasks.</span><button class="btn" id="addtok" style="margin-left:auto;padding:4px 10px">Add token</button></div>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="toolbar">
+    <div class="search"><i class="ti ti-search"></i><input id="q" placeholder="Search tasks…  (/)"></div>
+    <div class="tabs" id="tabs">
+      <button class="tab active" data-view="today">Today</button>
+      <button class="tab" data-view="week">Week</button>
+      <button class="tab" data-view="all">All</button>
+    </div>
+    <select class="sel" id="fstatus"><option value="">any status</option><option value="todo">to do</option><option value="active">active</option><option value="blocked">blocked</option><option value="done">done</option></select>
+    <select class="sel" id="fprio"><option value="">any priority</option><option>P0</option><option>P1</option><option>P2</option></select>
+    <select class="sel" id="sort"><option value="prio">sort: priority</option><option value="due">sort: due date</option><option value="recent">sort: recently done</option></select>
+  </div>
+
+  <div class="chips" id="chips"></div>
+  <div id="list"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const DEFAULT_REPO="mattlmccoy/dissertation-tracker-data/tasks.json";
+const LS={tok:"dash_tok",repo:"dash_repo",cache:"dash_cache",mode:"dash_mode"};
+const PRIO={P0:"--p0",P1:"--p1",P2:"--p2"};
+let DB=null, SHA=null, DIRTY=false, VIEW="today", FILTER=null, Q="", FS="", FP="", SORT="prio";
+const UNDO=[];
+const $=s=>document.querySelector(s);
+const token=()=>localStorage.getItem(LS.tok)||"";
+const repoParts=()=>{const p=(localStorage.getItem(LS.repo)||DEFAULT_REPO).split("/");return{owner:p[0],repo:p[1],path:p.slice(2).join("/")||"tasks.json"}};
+const today=()=>new Date().toISOString().slice(0,10);
+const days=(a,b)=>Math.round((new Date(b)-new Date(a))/864e5);
+const b64e=s=>btoa(unescape(encodeURIComponent(s)));
+const b64d=b=>decodeURIComponent(escape(atob(b.replace(/\n/g,""))));
+const esc=s=>(s||"").replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[m]));
+const cssv=v=>`var(${v})`;
+const st=t=>t.status||"todo";
+let tt;const toast=(m,e)=>{const t=$("#toast");t.textContent=m;t.className="toast on"+(e?" err":"");clearTimeout(tt);tt=setTimeout(()=>t.className="toast",2400)};
+
+/* theme */
+function applyMode(){const md=localStorage.getItem(LS.mode)||"light";document.documentElement.classList.toggle("dark",md==="dark");$("#modeBtn").innerHTML=`<i class="ti ti-${md==="dark"?"sun":"moon"}"></i>`}
+$("#modeBtn").onclick=()=>{localStorage.setItem(LS.mode,(localStorage.getItem(LS.mode)||"light")==="light"?"dark":"light");applyMode()};
+
+/* GitHub I/O — same tasks.json schema as the original dashboard */
+async function ghPull(){
+  if(!token()){$("#needtok").style.display="";loadCache();return}
+  $("#needtok").style.display="none";
+  const {owner,repo,path}=repoParts();
+  try{
+    const r=await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`,{headers:{Authorization:"Bearer "+token(),Accept:"application/vnd.github+json"}});
+    if(!r.ok){toast("Pull failed: "+r.status,1);loadCache();return}
+    const j=await r.json();SHA=j.sha;DB=JSON.parse(b64d(j.content));DIRTY=false;
+    localStorage.setItem(LS.cache,JSON.stringify(DB));render();toast("Pulled latest");
+  }catch(e){toast("Offline — using cache",1);loadCache()}
+}
+function loadCache(){const c=localStorage.getItem(LS.cache);if(c){DB=JSON.parse(c);render()}else{DB={meta:{phases:[],defenseDate:"2026-10-15"},tasks:[]};render()}}
+async function ghPush(){
+  if(!token()){openSettings();return}
+  const {owner,repo,path}=repoParts();DB.meta.updated=today();
+  const body={message:"tracker update "+new Date().toISOString(),content:b64e(JSON.stringify(DB,null,2)+"\n")};if(SHA)body.sha=SHA;
+  try{
+    const r=await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`,{method:"PUT",headers:{Authorization:"Bearer "+token(),Accept:"application/vnd.github+json"},body:JSON.stringify(body)});
+    if(r.status===409){toast("Conflict — pull first",1);return}
+    if(!r.ok){toast("Push failed: "+r.status,1);return}
+    const j=await r.json();SHA=j.content.sha;DIRTY=false;render();toast("Pushed to GitHub");
+  }catch(e){toast("Push failed",1)}
+}
+$("#syncBtn").onclick=()=>DIRTY?ghPush():ghPull();
+
+/* task ops */
+function markDirty(){DIRTY=true;DB.meta.updated=today();localStorage.setItem(LS.cache,JSON.stringify(DB));render()}
+function toggleDone(id){const t=DB.tasks.find(x=>x.id===id);if(!t)return;UNDO.push({id,status:t.status,completedAt:t.completedAt||null});
+  if(st(t)==="done"){t.status="todo";delete t.completedAt}else{t.status="done";t.completedAt=today()}markDirty()}
+
+/* phases / colors */
+const PH_COLORS=["#2c64c4","#0f6e56","#9a6a12","#7a3ea0","#b3261e","#1d7a8c","#9a4a6a"];
+function phaseColor(ph){const i=(DB.meta.phases||[]).indexOf(ph);return PH_COLORS[(i<0?0:i)%PH_COLORS.length]}
+
+/* filtering + sorting */
+const prioRank={P0:0,P1:1,P2:2};
+function matches(t){
+  if(FILTER&&t.phase!==FILTER)return false;
+  if(FS&&st(t)!==FS)return false;
+  if(FP&&(t.priority||"P2")!==FP)return false;
+  if(Q){const h=(t.title+" "+(t.notes||"")+" "+t.phase).toLowerCase();if(!h.includes(Q.toLowerCase()))return false}
+  return true;
+}
+function sortTasks(ts){
+  const byDue=(a,b)=>((a.due||"9999")<(b.due||"9999")?-1:1);
+  const byPrio=(a,b)=>(prioRank[a.priority]??3)-(prioRank[b.priority]??3)||byDue(a,b);
+  const byRecent=(a,b)=>((b.completedAt||"")<(a.completedAt||"")?-1:1);
+  return [...ts].sort(SORT==="due"?byDue:SORT==="recent"?byRecent:byPrio);
+}
+const isFocusOpen=t=>st(t)!=="done"&&(st(t)==="active"||t.cadence==="daily"||t.cadence==="weekly"||(t.due&&days(today(),t.due)<=0));
+const doneWithin=(t,n)=>st(t)==="done"&&t.completedAt&&days(t.completedAt,today())<n;
+
+function visibleTasks(){
+  const all=(DB.tasks||[]).filter(matches);
+  if(VIEW==="today"){const open=all.filter(isFocusOpen),done=all.filter(t=>doneWithin(t,1));return{label:"In focus today",open,done}}
+  if(VIEW==="week"){const open=all.filter(t=>st(t)!=="done"&&(st(t)==="active"||t.cadence==="daily"||t.cadence==="weekly"||(t.due&&days(today(),t.due)<=7))),done=all.filter(t=>doneWithin(t,7));return{label:"This week",open,done}}
+  const open=all.filter(t=>st(t)!=="done"),done=all.filter(t=>st(t)==="done");return{label:"All tasks",open,done};
+}
+
+/* rendering */
+function chipPrio(p){return `<span class="chip" style="color:${cssv(PRIO[p]||"--p2")};border-color:color-mix(in srgb,${cssv(PRIO[p]||"--p2")} 40%,transparent)">${p||"P2"}</span>`}
+function taskCard(t){
+  const done=st(t)==="done",c=phaseColor(t.phase);
+  const over=t.due&&days(today(),t.due)<0&&!done;
+  const due=t.due?`<span class="chip" style="${over?"color:var(--danger);border-color:color-mix(in srgb,var(--danger) 40%,transparent)":""}"><i class="ti ti-calendar"></i>${t.due}</span>`:"";
+  const cad=(t.cadence&&t.cadence!=="once")?`<span class="chip"><i class="ti ti-repeat"></i>${t.cadence}</span>`:"";
+  const sta=(st(t)!=="todo"&&!done)?`<span class="chip">${st(t)}</span>`:"";
+  const when=done&&t.completedAt?`<span class="chip" style="color:var(--success)"><i class="ti ti-check"></i>${t.completedAt}</span>`:"";
+  return `<div class="task ${done?"done":""}" data-id="${t.id}" style="--lc:${cssv(PRIO[t.priority]||"--p2")}">
+    <div class="check ${done?"on":""}" data-check="${t.id}"><i class="ti ti-check"></i></div>
+    <div style="flex:1;min-width:0"><div class="ttitle">${esc(t.title)}</div>
+    <div class="tmeta">${chipPrio(t.priority)}${sta}${when}${due}${cad}<span class="chip" style="color:${c};border-color:color-mix(in srgb,${c} 40%,transparent)">${esc(t.phase||"")}</span></div>
+    ${t.notes?`<div class="tnote">${esc(t.notes)}</div>`:""}</div></div>`;
+}
+function renderStats(){
+  const t=DB.tasks||[],done=t.filter(x=>st(x)==="done").length,total=t.length;
+  const wk=t.filter(x=>doneWithin(x,7)).length, tdy=t.filter(x=>doneWithin(x,1)).length;
+  const over=t.filter(x=>st(x)!=="done"&&x.due&&days(today(),x.due)<0).length;
+  const pct=total?Math.round(done/total*100):0;
+  const open=total-done;
+  const cd=DB.meta.defenseDate?days(today(),DB.meta.defenseDate):null;
+  const pace=(cd&&cd>0&&open)?Math.ceil(open/(cd/7)):0;   // open tasks ÷ weeks left
+  $("#stats").innerHTML=`
+    <div class="stat"><div class="v">${done}<span style="font-size:14px;color:var(--text-3)">/${total}</span></div><div class="k">tasks complete</div><div class="sub">${pct}% overall</div></div>
+    <div class="stat"><div class="v">${wk}</div><div class="k">done this week</div><div class="sub">${tdy} today</div></div>
+    <div class="stat"><div class="v" style="${over?"color:var(--danger)":""}">${over}</div><div class="k">overdue & open</div></div>
+    <div class="stat"><div class="v">${cd!=null?cd:"—"}</div><div class="k">days to defense</div><div class="sub">${pace?`~${pace}/wk to finish on time`:""}</div></div>`;
+}
+function renderChips(){
+  const counts={};(DB.tasks||[]).forEach(t=>counts[t.phase]=(counts[t.phase]||0)+1);
+  const mk=(name,n,on)=>`<button class="fchip ${on?"on":""}" data-ph="${name===null?"":esc(name)}">${name?`<i style="background:${phaseColor(name)}"></i>`:""}${name||"All phases"}<span class="n">${n}</span></button>`;
+  $("#chips").innerHTML=mk(null,(DB.tasks||[]).length,!FILTER)+(DB.meta.phases||[]).map(p=>mk(p,counts[p]||0,FILTER===p)).join("");
+}
+function renderCountdown(){const d=DB.meta.defenseDate;if(!d)return;const n=days(today(),d);$("#cdNum").textContent=n;$("#cdNum").classList.toggle("warn",n<60);$("#cdDate").textContent=new Date(d+"T00:00:00").toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"})}
+function render(){
+  if(!DB)return;
+  renderCountdown();renderStats();renderChips();
+  document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.view===VIEW));
+  $("#syncBtn").innerHTML=`<i class="ti ti-${DIRTY?"cloud-up":"refresh"}"></i>`;$("#syncBtn").style.color=DIRTY?"var(--warn)":"";
+  const {label,open,done}=visibleTasks();
+  const items=sortTasks(open).concat(VIEW==="all"?sortTasks(done):done);
+  $("#list").innerHTML=`<div class="group"><h2>${label} <span class="cnt">${open.length} open · ${done.length} done</span></h2>${
+    items.length?items.map(taskCard).join(""):`<div class="empty">Nothing matches. Adjust filters or search.</div>`}</div>`;
+}
+
+/* interactions */
+$("#tabs").addEventListener("click",e=>{const b=e.target.closest(".tab");if(b){VIEW=b.dataset.view;render()}});
+$("#chips").addEventListener("click",e=>{const b=e.target.closest(".fchip");if(b){FILTER=b.dataset.ph||null;render()}});
+$("#list").addEventListener("click",e=>{const c=e.target.closest("[data-check]");if(c){e.stopPropagation();toggleDone(c.dataset.check);return}});
+$("#q").addEventListener("input",e=>{Q=e.target.value;render()});
+$("#fstatus").addEventListener("change",e=>{FS=e.target.value;render()});
+$("#fprio").addEventListener("change",e=>{FP=e.target.value;render()});
+$("#sort").addEventListener("change",e=>{SORT=e.target.value;render()});
+function openSettings(){const v=prompt("GitHub fine-grained PAT (Contents read/write on the data repo):",token());if(v!==null){if(v.trim())localStorage.setItem(LS.tok,v.trim());else localStorage.removeItem(LS.tok);ghPull()}}
+$("#setBtn").onclick=openSettings;$("#addtok").onclick=openSettings;
+window.addEventListener("keydown",e=>{
+  if(/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName||"")){if(e.key==="Escape")document.activeElement.blur();return}
+  if(e.key==="/"){e.preventDefault();$("#q").focus()}
+  if(e.key==="t"){VIEW="today";render()} if(e.key==="w"){VIEW="week";render()} if(e.key==="a"){VIEW="all";render()}
+});
+
+/* boot */
+applyMode();
+ghPull();
+</script>
+</body>
+</html>
