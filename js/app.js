@@ -172,9 +172,11 @@ function showPopover(anchor, rects){
     <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-primary" id="csave">Comment</button><button class="btn" id="ccancel">Cancel</button></div>`;
   read.appendChild(pop);
   let tag = 'claim'; const tr = pop.querySelector('#tags');
-  TAGS.forEach(t => { const b = document.createElement('button'); b.textContent = t;
-    const pick = () => { tag = t; [...tr.children].forEach(x => { x.className=''; }); b.className='on'; b.style.background=`var(--${t}-bg)`; b.style.color=`var(--${t})`; };
-    b.onclick = pick; tr.appendChild(b); if (t==='claim') pick(); });
+  TAGS.forEach(t => { const b = document.createElement('button'); b.textContent = t; b.dataset.tag = t;
+    const pick = () => { tag = t;
+      [...tr.children].forEach(x => { x.className = ''; x.style.background = 'transparent'; x.style.color = 'var(--text-2)'; x.style.borderColor = 'var(--border)'; });
+      b.className = 'on'; b.style.background = `var(--${t}-bg)`; b.style.color = `var(--${t})`; b.style.borderColor = 'transparent'; };
+    b.onclick = pick; tr.appendChild(b); if (t === 'claim') pick(); });
   pop.querySelector('#cbody').focus();
   pop.querySelector('#ccancel').onclick = () => { pop.remove(); window.getSelection().removeAllRanges(); };
   pop.querySelector('#csave').onclick = () => {
