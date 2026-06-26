@@ -759,26 +759,48 @@ function manageToken(){
 // ---------- release gate: control which chapters each advisor's portal shows ----------
 async function openReleasePanel(){
   const t = tok(); if (!t){ flash('Add your access token first.'); return; }
-  document.getElementById('relov')?.remove();
-  const ov = document.createElement('div'); ov.id = 'relov';
-  ov.innerHTML = `<div class="rel-card"><div class="rel-h">Release chapters to advisors<button class="icbtn" id="rel-x" style="margin-left:auto"><i class="ti ti-x"></i></button></div><div id="rel-body" style="font-size:13px;color:var(--text-3)">Loading…</div></div>`;
-  document.body.appendChild(ov);
-  ov.querySelector('#rel-x').onclick = () => ov.remove();
-  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  document.getElementById('nav').style.display = 'none';
+  document.getElementById('comments').style.display = 'none';
+  document.getElementById('topbar').innerHTML =
+    `<strong style="font-size:16px;font-weight:600"><i class="ti ti-users" style="margin-right:7px"></i>Advisor releases</strong>
+     <button class="btn" id="rel-close" style="margin-left:auto"><i class="ti ti-arrow-left"></i>Back to chapters</button>`;
+  document.getElementById('rel-close').onclick = enterHome;
+  read.innerHTML = `<div class="rel-page"><div id="rel-body" style="color:var(--text-3)">Loading…</div></div>`;
   let rel, sha;
   try { const r = await getJson(t, 'release.json'); rel = r.json || {}; sha = r.sha; }
-  catch(e){ ov.querySelector('#rel-body').textContent = 'Could not load release.json ('+e.message+').'; return; }
+  catch(e){ document.getElementById('rel-body').textContent = 'Could not load release.json ('+e.message+').'; return; }
   const advs = Object.keys(rel).filter(k => k !== '_comment');
   const base = location.origin + location.pathname.replace(/[^/]+$/, '');
+  // pull each advisor's submitted comments (only for chapters they have released) for owner-side review
+  const inbox = {};   // inbox[advisor] = [{chapter, comment}]
+  await Promise.all(advs.flatMap(a => (rel[a].released||[]).map(async ch => {
+    try { const r = await getJson(t, `advisor/${a}/${ch}.json`); (r.json?.comments||[]).forEach(c => (inbox[a] = inbox[a]||[]).push({ chapter:ch, c })); } catch(e){}
+  })));
   const rows = CHAPTERS.map(c => `<tr><td>${c.n}. ${escapeHtml(shortTitle(c.title))}</td>${advs.map(a => `<td style="text-align:center"><input type="checkbox" data-a="${a}" data-ch="${c.id}" ${(rel[a].released||[]).includes(c.id)?'checked':''}></td>`).join('')}</tr>`).join('');
-  ov.querySelector('#rel-body').innerHTML = `
+  const inboxHtml = advs.map(a => {
+    const items = inbox[a]||[];
+    return `<div class="rel-inbox"><div class="rel-inbox-h"><b>${escapeHtml(rel[a].name||a)}</b><span class="chip" style="background:var(--accent-bg);color:var(--accent)">${items.length} comment${items.length!==1?'s':''}</span></div>${
+      items.length ? items.map(({chapter, c}) => `<div class="rel-cmt" data-ch="${chapter}" data-q="${escapeHtml((c.anchor?.quote||'').slice(0,60))}">
+          <div class="rel-cmt-h">${escapeHtml(chMeta(chapter).n+'')}. ${escapeHtml(shortTitle(chMeta(chapter).title))} · ${escapeHtml(c.anchor?.section||'')} ${c.status==='submitted'?'<span class="chip" style="background:var(--success-bg);color:var(--success);margin-left:6px">submitted</span>':''}</div>
+          <div class="rel-cmt-q">"${escapeHtml((c.anchor?.quote||'').slice(0,90))}"</div>
+          <div class="rel-cmt-b">${escapeHtml(c.body||'')}</div>${c.edit?`<div class="sugg"><div class="op"><i class="ti ti-pencil"></i>Suggested ${c.edit.op}</div>${c.edit.op==='delete'?`<del>${escapeHtml(c.edit.find||'')}</del>`:`<del>${escapeHtml(c.edit.find||'')}</del> <ins>${escapeHtml(c.edit.replacement||'')}</ins>`}</div>`:''}
+          <div style="margin-top:6px"><button class="btn rel-open" style="padding:3px 10px;font-size:12px"><i class="ti ti-arrow-right"></i>Open in context</button></div></div>`).join('')
+        : `<div style="font-size:12.5px;color:var(--text-3);padding:6px 2px">No comments submitted yet.</div>` }</div>`;
+  }).join('');
+  document.getElementById('rel-body').innerHTML = `
+    <div class="rel-sec">Which chapters each advisor can see</div>
     <table class="rel-tbl"><thead><tr><th>Chapter</th>${advs.map(a => `<th>${escapeHtml(a)}<div style="font-weight:400;font-size:10px;color:var(--text-3)">${escapeHtml(rel[a].name||a)}</div></th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>
+    <div style="display:flex;gap:8px;margin:14px 0 6px;align-items:center"><button class="btn btn-primary" id="rel-save">Save &amp; publish</button><span id="rel-stat" style="font-size:12px;color:var(--text-3)"></span></div>
     <div class="rel-links">${advs.map(a => `<div><b>${escapeHtml(rel[a].name||a)}</b> → <code>${escapeHtml(base+a+'.html')}</code></div>`).join('')}</div>
-    <div style="display:flex;gap:8px;margin-top:14px;align-items:center"><button class="btn btn-primary" id="rel-save">Save &amp; publish</button><span id="rel-stat" style="font-size:12px;color:var(--text-3)"></span></div>`;
-  ov.querySelector('#rel-save').onclick = async () => {
-    advs.forEach(a => { rel[a].released = [...ov.querySelectorAll(`input[data-a="${a}"]:checked`)].map(x => x.dataset.ch); });
-    const stat = ov.querySelector('#rel-stat'); stat.textContent = 'Publishing…';
-    try { await putJson(t, 'release.json', rel, sha, 'release: update advisor chapter gate'); stat.textContent = 'Published ✓'; setTimeout(() => ov.remove(), 700); }
+    <div class="rel-sec" style="margin-top:26px">Comments received from advisors</div>${inboxHtml}`;
+  document.querySelectorAll('.rel-cmt').forEach(el => el.querySelector('.rel-open').onclick = () => {
+    const ch = el.dataset.ch, q = el.dataset.q;
+    enterChapter(ch); setTimeout(() => { const t = [...document.querySelectorAll('#doc p, #doc li, #doc figcaption')].find(p => p.textContent.replace(/\s+/g,' ').includes(q.slice(0,40))); if (t){ t.scrollIntoView({behavior:'smooth',block:'center'}); t.classList.add('flash'); setTimeout(()=>t.classList.remove('flash'),1500); } }, 1900);
+  });
+  document.getElementById('rel-save').onclick = async () => {
+    advs.forEach(a => { rel[a].released = [...document.querySelectorAll(`input[data-a="${a}"]:checked`)].map(x => x.dataset.ch); });
+    const stat = document.getElementById('rel-stat'); stat.textContent = 'Publishing…';
+    try { await putJson(t, 'release.json', rel, sha, 'release: update advisor chapter gate'); stat.textContent = 'Published ✓'; }
     catch(e){ stat.textContent = 'Failed: ' + e.message; }
   };
 }
