@@ -61,7 +61,7 @@ function renderTopbar(){
   const si = document.getElementById('search');
   si.addEventListener('keydown', e => { if (e.key === 'Enter') runSearch(si.value); if (e.key === 'Escape'){ si.value=''; clearSearch(); } });
 }
-const shortTitle = t => { const s = t.split(':')[0].replace(/ and .*/,''); return s.length <= 30 ? s : s.slice(0,30).replace(/\s\S*$/,'') + '…'; };
+const shortTitle = t => { const s = t.split(':')[0].trim(); return s.length <= 34 ? s : s.slice(0,34).replace(/\s\S*$/,'') + '…'; };
 
 function openChapterMenu(){
   const old = document.getElementById('chmenu'); if (old){ old.remove(); return; }
