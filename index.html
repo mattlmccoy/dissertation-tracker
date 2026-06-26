@@ -67,6 +67,17 @@ header.top{display:flex;align-items:center;gap:14px;border-bottom:.5px solid var
 .glabel{flex:0 0 150px;display:flex;align-items:center;gap:6px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .glabel i{width:8px;height:8px;border-radius:50%}
 .gtrack{flex:1;display:flex;gap:2px} .gcell{flex:1;height:16px;border-radius:2px;background:var(--bg-3)} .gcell.has{cursor:pointer}
 .ghbars{display:flex;gap:2px;align-items:flex-end;height:46px;margin:2px 0 10px 158px} .ghbar{flex:1;background:var(--accent);border-radius:2px 2px 0 0;min-height:2px}
+/* retrospective task-bar timeline */
+.gbars{border:.5px solid var(--border);border-radius:var(--r-lg);background:var(--bg-2);padding:12px 14px 16px;margin-top:6px}
+.gbaxis{display:grid;grid-template-columns:165px 1fr;gap:10px;margin-bottom:4px}
+.gbaxis .ticks{position:relative;height:13px} .gbaxis .ticks span{position:absolute;transform:translateX(-50%);font-family:ui-monospace,Menlo,monospace;font-size:9px;color:var(--text-3);white-space:nowrap}
+.gbphase{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-2);display:flex;align-items:center;gap:7px;margin:13px 0 5px} .gbphase i{width:9px;height:9px;border-radius:3px}
+.gbrow{display:grid;grid-template-columns:165px 1fr;gap:10px;align-items:center;height:23px}
+.gblabel{font-size:11.5px;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .gbrow.done .gblabel{color:var(--text-3)}
+.gbtrack{position:relative;height:15px;border-radius:4px;background:color-mix(in srgb,var(--text) 5%,transparent)}
+.gbbar{position:absolute;top:1.5px;height:12px;border-radius:3px;cursor:pointer;min-width:5px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.14)} .gbbar:hover{filter:brightness(1.12);outline:1px solid var(--text)}
+.gbpill{position:absolute;right:4px;top:0;font-family:ui-monospace,Menlo,monospace;font-size:9px;padding:1.5px 8px;border-radius:10px;border:1px dashed var(--border);color:var(--text-3);cursor:pointer;white-space:nowrap}
+.gbpill.active{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 45%,transparent);border-style:solid} .gbpill.blocked{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 45%,transparent)}
 /* modal */
 .scrim{position:fixed;inset:0;background:rgba(0,0,0,.34);z-index:70;display:none;align-items:flex-start;justify-content:center;padding:6vh 16px;overflow:auto} .scrim.on{display:flex}
 .modal{background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-lg);width:min(560px,96%);box-shadow:0 24px 70px rgba(0,0,0,.3);padding:20px 22px}
@@ -311,7 +322,23 @@ function ganttView(){
   phases.forEach(ph=>{const c=phaseColor(ph);if(!done.some(t=>t.phase===ph))return;
     html+=`<div class="grow"><div class="glabel"><i style="background:${c}"></i>${esc(ph)}</div><div class="gtrack">`+
       cols.map(d=>{const cell=byCell[ph+"|"+d];return cell?`<div class="gcell has" style="background:${c}" data-id="${cell[0].id}" title="${esc(cell.map(t=>t.title).join(' · '))}"></div>`:`<div class="gcell"></div>`}).join("")+`</div></div>`});
-  html+=`</div></div>`;$("#list").innerHTML=html;
+  html+=`</div></div>`;
+  // --- retrospective task-bar timeline (done tasks as bars, open tasks at "now") ---
+  const all=DB.tasks.filter(matches);
+  const pct=d=>Math.max(0,Math.min(100,days(min,d)/span*100));
+  const N=7,ticks=[];for(let i=0;i<=N;i++){const dt=new Date(min);dt.setDate(dt.getDate()+Math.round(span*i/N));ticks.push(dt.toISOString().slice(0,10))}
+  let bg=`<div class="group"><h2>Task timeline <span class="cnt">done tasks as retrospective bars (gap = time since previous completion) · open tasks at “now”</span></h2>`+
+    `<div class="gbars"><div class="gbaxis"><div></div><div class="ticks">`+ticks.map((d,i)=>`<span style="left:${Math.min(99,i/N*100)}%">${d.slice(5)}</span>`).join("")+`</div></div>`;
+  phases.forEach(ph=>{ const ts=all.filter(t=>t.phase===ph); if(!ts.length) return; const c=phaseColor(ph);
+    bg+=`<div class="gbphase"><i style="background:${c}"></i>${esc(ph)}</div>`;
+    const dts=ts.filter(t=>st(t)==="done"&&t.completedAt).sort((a,b)=>a.completedAt<b.completedAt?-1:1); let prev=min;
+    dts.forEach(t=>{ const l=pct(prev),w=Math.max(1.5,pct(t.completedAt)-l);
+      bg+=`<div class="gbrow done"><div class="gblabel" title="${esc(t.title)}">${esc(t.title)}</div><div class="gbtrack"><div class="gbbar" data-id="${t.id}" title="${esc(t.title)} — done ${t.completedAt}" style="left:${l}%;width:${w}%;background:${c}"></div></div></div>`; prev=t.completedAt; });
+    sortTasks(ts.filter(t=>st(t)!=="done")).forEach(t=>{ const s=st(t),cls=s==="active"?"active":s==="blocked"?"blocked":"";
+      bg+=`<div class="gbrow"><div class="gblabel" title="${esc(t.title)}">${esc(t.title)}</div><div class="gbtrack"><div class="gbpill ${cls}" data-id="${t.id}">${s==="active"?"in progress":s==="blocked"?"blocked":"to do"} · now</div></div></div>`; });
+  });
+  bg+=`</div></div>`;
+  $("#list").innerHTML=html+bg;
 }
 
 /* drag reorder (list views) */
