@@ -229,6 +229,24 @@ def cmd_respond(a):
     print(f"{C['g']}Answered {a.comment_id}; the app shows it as 'answered' with your reply.{C['x']}")
 
 
+def cmd_note(a):
+    """Attach an explanation to a comment WITHOUT changing its status (e.g. how a staged edit was made)."""
+    pull(a.data)
+    rp = review_path(a.data, a.chapter)
+    review = load(rp, None)
+    if review is None:
+        sys.exit(f"{C['r']}no review file at {rp}{C['x']}")
+    hit = next((c for c in review.get("comments", []) if c["id"] == a.comment_id), None)
+    if hit is None:
+        sys.exit(f"{C['r']}comment {a.comment_id} not in {a.chapter}{C['x']}")
+    hit.setdefault("claude", {})
+    hit["claude"]["response"] = a.text
+    hit["claude"]["ts"] = now()
+    dump(rp, review)
+    _push_data(a, f"review: note on {a.comment_id} in {a.chapter}")
+    print(f"{C['g']}Noted {a.comment_id} (status kept as '{hit.get('status')}'); the app shows your explanation.{C['x']}")
+
+
 def cmd_done(a):
     """Mark any job done (e.g. after running agents in-session)."""
     pull(a.data)
@@ -300,6 +318,7 @@ def main():
     sp = sub.add_parser("start", help="branch off main for a job"); sp.add_argument("job_id"); sp.set_defaults(fn=cmd_start)
     sp = sub.add_parser("stage", help="mark comments staged + job done"); sp.add_argument("job_id"); sp.add_argument("--force", action="store_true"); sp.set_defaults(fn=cmd_stage)
     sp = sub.add_parser("respond", help="answer a question-comment (status=answered)"); sp.add_argument("chapter"); sp.add_argument("comment_id"); sp.add_argument("text"); sp.set_defaults(fn=cmd_respond)
+    sp = sub.add_parser("note", help="attach an explanation to a comment, keep its status"); sp.add_argument("chapter"); sp.add_argument("comment_id"); sp.add_argument("text"); sp.set_defaults(fn=cmd_note)
     sp = sub.add_parser("done", help="mark any job done (e.g. after run-agents)"); sp.add_argument("job_id"); sp.set_defaults(fn=cmd_done)
     sub.add_parser("advisor-list", help="list advisor-submitted comments + resolutions").set_defaults(fn=cmd_advisor_list)
     sp = sub.add_parser("advisor-resolve", help="record how an advisor comment was addressed"); sp.add_argument("advisor"); sp.add_argument("chapter"); sp.add_argument("comment_id"); sp.add_argument("state", choices=["addressed","declined","noted"]); sp.add_argument("note"); sp.add_argument("--before", default=""); sp.add_argument("--after", default=""); sp.set_defaults(fn=cmd_advisor_resolve)
