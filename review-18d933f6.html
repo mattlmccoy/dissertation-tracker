@@ -110,6 +110,12 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;pad
 .rel-cmt-h{font-size:11.5px;color:var(--text-3);display:flex;align-items:center;margin-bottom:5px}
 .rel-cmt-q{font-size:12.5px;font-style:italic;color:var(--text-3);border-left:2px solid var(--border-2);padding-left:9px;margin-bottom:6px}
 .rel-cmt-b{font-size:13.5px;line-height:1.5}
+.resol{margin-top:8px;padding:8px 10px;border-radius:var(--r-sm);font-size:12.5px;line-height:1.5;background:var(--bg-3)}
+.resol-h{display:flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;margin-bottom:4px}
+.resol-addressed{background:var(--success-bg)} .resol-addressed .resol-h{color:var(--success)}
+.resol-declined .resol-h{color:var(--text-2)} .resol-noted{background:var(--accent-bg)} .resol-noted .resol-h{color:var(--accent)}
+.resol del{color:var(--danger);text-decoration:line-through} .resol ins{color:var(--success);text-decoration:none;background:var(--success-bg);border-radius:2px;padding:0 2px}
+.rform{margin-top:8px;border-top:.5px dashed var(--border);padding-top:8px} .rform select,.rform textarea{width:100%;font:inherit;font-size:12.5px;color:var(--text);background:var(--bg);border:.5px solid var(--border);border-radius:6px;padding:6px 8px;outline:none;margin-bottom:6px}
 /* suggestion (track-changes) */
 :root{ --edit:#0f6e6e; --edit-bg:#e0f3f1; --suggest:#0f6e56; }
 .dark{ --edit:#6fc7c2; --edit-bg:#123230; --suggest:#69c6a3; }

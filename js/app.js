@@ -780,11 +780,16 @@ async function openReleasePanel(){
   const inboxHtml = advs.map(a => {
     const items = inbox[a]||[];
     return `<div class="rel-inbox"><div class="rel-inbox-h"><b>${escapeHtml(rel[a].name||a)}</b><span class="chip" style="background:var(--accent-bg);color:var(--accent)">${items.length} comment${items.length!==1?'s':''}</span></div>${
-      items.length ? items.map(({chapter, c}) => `<div class="rel-cmt" data-ch="${chapter}" data-q="${escapeHtml((c.anchor?.quote||'').slice(0,60))}">
-          <div class="rel-cmt-h">${escapeHtml(chMeta(chapter).n+'')}. ${escapeHtml(shortTitle(chMeta(chapter).title))} · ${escapeHtml(c.anchor?.section||'')} ${c.status==='submitted'?'<span class="chip" style="background:var(--success-bg);color:var(--success);margin-left:6px">submitted</span>':''}</div>
+      items.length ? items.map(({chapter, c}) => `<div class="rel-cmt" data-ch="${chapter}" data-a="${a}" data-cid="${c.id}" data-q="${escapeHtml((c.anchor?.quote||'').slice(0,60))}">
+          <div class="rel-cmt-h">${escapeHtml(chMeta(chapter).n+'')}. ${escapeHtml(shortTitle(chMeta(chapter).title))} · ${escapeHtml(c.anchor?.section||'')} ${c.status==='submitted'?'<span class="chip" style="background:var(--success-bg);color:var(--success);margin-left:6px">submitted</span>':c.status==='resolved'?'<span class="chip" style="margin-left:6px">withdrawn</span>':''}</div>
           <div class="rel-cmt-q">"${escapeHtml((c.anchor?.quote||'').slice(0,90))}"</div>
           <div class="rel-cmt-b">${escapeHtml(c.body||'')}</div>${c.edit?`<div class="sugg"><div class="op"><i class="ti ti-pencil"></i>Suggested ${c.edit.op}</div>${c.edit.op==='delete'?`<del>${escapeHtml(c.edit.find||'')}</del>`:`<del>${escapeHtml(c.edit.find||'')}</del> <ins>${escapeHtml(c.edit.replacement||'')}</ins>`}</div>`:''}
-          <div style="margin-top:6px"><button class="btn rel-open" style="padding:3px 10px;font-size:12px"><i class="ti ti-arrow-right"></i>Open in context</button></div></div>`).join('')
+          ${resolHtml(c)}
+          <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn rel-open" style="padding:3px 10px;font-size:12px"><i class="ti ti-arrow-right"></i>Open in context</button><button class="btn rel-rec" style="padding:3px 10px;font-size:12px"><i class="ti ti-message-check"></i>${c.resolution?'Update':'Record'} resolution</button></div>
+          <div class="rform" style="display:none">
+            <select class="r-state"><option value="addressed"${c.resolution?.state==='addressed'?' selected':''}>Addressed — changed as suggested</option><option value="declined"${c.resolution?.state==='declined'?' selected':''}>Kept as written</option><option value="noted"${c.resolution?.state==='noted'?' selected':''}>Noted</option></select>
+            <textarea class="r-note" rows="2" placeholder="How it was handled — the advisor sees this, keep it plain and reviewer-facing…">${escapeHtml(c.resolution?.note||'')}</textarea>
+            <div style="display:flex;gap:6px;align-items:center"><button class="btn btn-primary r-save" style="padding:4px 11px;font-size:12px">Save to advisor</button><span class="r-stat" style="font-size:11px;color:var(--text-3)"></span></div></div></div>`).join('')
         : `<div style="font-size:12.5px;color:var(--text-3);padding:6px 2px">No comments submitted yet.</div>` }</div>`;
   }).join('');
   document.getElementById('rel-body').innerHTML = `
@@ -793,9 +798,19 @@ async function openReleasePanel(){
     <div style="display:flex;gap:8px;margin:14px 0 6px;align-items:center"><button class="btn btn-primary" id="rel-save">Save &amp; publish</button><span id="rel-stat" style="font-size:12px;color:var(--text-3)"></span></div>
     <div class="rel-links">${advs.map(a => `<div><b>${escapeHtml(rel[a].name||a)}</b> → <code>${escapeHtml(base+a+'.html')}</code></div>`).join('')}</div>
     <div class="rel-sec" style="margin-top:26px">Comments received from advisors</div>${inboxHtml}`;
-  document.querySelectorAll('.rel-cmt').forEach(el => el.querySelector('.rel-open').onclick = () => {
-    const ch = el.dataset.ch, q = el.dataset.q;
-    enterChapter(ch); setTimeout(() => { const t = [...document.querySelectorAll('#doc p, #doc li, #doc figcaption')].find(p => p.textContent.replace(/\s+/g,' ').includes(q.slice(0,40))); if (t){ t.scrollIntoView({behavior:'smooth',block:'center'}); t.classList.add('flash'); setTimeout(()=>t.classList.remove('flash'),1500); } }, 1900);
+  document.querySelectorAll('.rel-cmt').forEach(el => {
+    el.querySelector('.rel-open').onclick = () => {
+      const ch = el.dataset.ch, q = el.dataset.q;
+      enterChapter(ch); setTimeout(() => { const tg = [...document.querySelectorAll('#doc p, #doc li, #doc figcaption')].find(p => p.textContent.replace(/\s+/g,' ').includes(q.slice(0,40))); if (tg){ tg.scrollIntoView({behavior:'smooth',block:'center'}); tg.classList.add('flash'); setTimeout(()=>tg.classList.remove('flash'),1500); } }, 1900);
+    };
+    const form = el.querySelector('.rform');
+    el.querySelector('.rel-rec').onclick = () => { form.style.display = form.style.display === 'none' ? 'block' : 'none'; };
+    el.querySelector('.r-save').onclick = async () => {
+      const stat = el.querySelector('.r-stat'); stat.textContent = 'Saving…';
+      const resolution = { state: el.querySelector('.r-state').value, note: el.querySelector('.r-note').value.trim(), ts: new Date().toISOString() };
+      try { await recordResolution(el.dataset.a, el.dataset.ch, el.dataset.cid, resolution); stat.textContent = 'Saved — the advisor will see this on their portal.'; }
+      catch(e){ stat.textContent = 'Failed: ' + e.message; }
+    };
   });
   document.getElementById('rel-save').onclick = async () => {
     advs.forEach(a => { rel[a].released = [...document.querySelectorAll(`input[data-a="${a}"]:checked`)].map(x => x.dataset.ch); });
@@ -803,6 +818,23 @@ async function openReleasePanel(){
     try { await putJson(t, 'release.json', rel, sha, 'release: update advisor chapter gate'); stat.textContent = 'Published ✓'; }
     catch(e){ stat.textContent = 'Failed: ' + e.message; }
   };
+}
+// resolution display (shared by the inbox + advisor portal — neutral, reviewer-facing wording)
+function resolHtml(c){
+  if (!c.resolution) return ''; const r = c.resolution;
+  const label = r.state==='addressed'?'Addressed':r.state==='declined'?'Kept as written':'Noted';
+  const icon = r.state==='addressed'?'circle-check':r.state==='declined'?'circle-x':'info-circle';
+  const diff = (r.before||r.after) ? `<div class="rdiff">${r.before?`<del>${escapeHtml(r.before)}</del>`:''}${r.after?` <ins>${escapeHtml(r.after)}</ins>`:''}</div>` : '';
+  return `<div class="resol resol-${r.state||'noted'}"><div class="resol-h"><i class="ti ti-${icon}"></i>${label}${r.ts?` · ${(r.ts||'').slice(0,10)}`:''}</div>${r.note?`<div>${escapeHtml(r.note)}</div>`:''}${diff}</div>`;
+}
+// write a resolution into an advisor's comment file so it appears on their portal
+async function recordResolution(advisorId, ch, cid, resolution){
+  const t = tok();
+  const { json, sha } = await getJson(t, `advisor/${advisorId}/${ch}.json`);
+  if (!json) throw new Error('advisor file not found');
+  const c = (json.comments||[]).find(x => x.id === cid); if (!c) throw new Error('comment not found');
+  c.resolution = resolution;
+  await putJson(t, `advisor/${advisorId}/${ch}.json`, json, sha, `resolution: ${advisorId} ${ch} ${cid}`);
 }
 window.addEventListener('keydown', e => {
   const pop = document.getElementById('pop');

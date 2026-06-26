@@ -103,6 +103,13 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;pad
 .ccard .sugg{margin-top:7px;font-size:12.5px;line-height:1.5;border-left:2px solid var(--suggest);padding-left:9px}
 .ccard .sugg del{color:var(--danger);text-decoration:line-through} .ccard .sugg ins{color:var(--success);text-decoration:none;background:var(--success-bg);border-radius:2px;padding:0 2px}
 .ccard .sugg .op{font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--edit);font-weight:600;margin-bottom:3px;display:flex;align-items:center;gap:4px}
+/* resolution (how a comment was addressed) */
+.resol{margin-top:8px;padding:8px 10px;border-radius:var(--r-sm);font-size:12.5px;line-height:1.5;background:var(--bg-3)}
+.resol-h{display:flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;margin-bottom:4px}
+.resol-addressed{background:var(--success-bg)} .resol-addressed .resol-h{color:var(--success)}
+.resol-declined{background:var(--bg-3)} .resol-declined .resol-h{color:var(--text-2)}
+.resol-noted{background:var(--accent-bg)} .resol-noted .resol-h{color:var(--accent)}
+.resol .rdiff{margin-top:4px} .resol del{color:var(--danger);text-decoration:line-through} .resol ins{color:var(--success);text-decoration:none;background:var(--success-bg);border-radius:2px;padding:0 2px}
 /* inline comment highlights */
 #doc mark.cmark{background:color-mix(in srgb, var(--accent) 16%, transparent);border-radius:2px;padding:.5px 0;cursor:pointer;box-decoration-break:clone;-webkit-box-decoration-break:clone}
 #doc mark.cmark[data-tag=figure]{background:color-mix(in srgb,var(--figure) 18%,transparent)}

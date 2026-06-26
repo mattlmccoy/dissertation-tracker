@@ -49,7 +49,11 @@ if (localStorage.getItem('theme') === 'dark') document.documentElement.classList
 let reviewSha = null, syncTimer = null;
 async function syncDown(){ const t = tok(); if (!t) return;
   try { const { json, sha } = await getJson(t, reviewPath(current)); reviewSha = sha;
-    if (json){ const seen = new Set(review.comments.map(c=>c.id)); json.comments?.forEach(c=>{ if(!seen.has(c.id)) review.comments.push(c); }); save(); renderComments(); if (document.getElementById('doc')) paintHighlights(); } }
+    if (json){ const rById = Object.fromEntries((json.comments||[]).map(c=>[c.id,c]));
+      // keep this reviewer's own body/edit/status; pull in the author's resolution from the remote file
+      review.comments = review.comments.map(lc => { const rc = rById[lc.id]; return rc ? { ...lc, resolution: rc.resolution || lc.resolution } : lc; });
+      (json.comments||[]).forEach(rc => { if (!review.comments.find(c=>c.id===rc.id)) review.comments.push(rc); });
+      save(); renderComments(); if (document.getElementById('doc')) paintHighlights(); } }
   catch(e){ /* first time / offline */ } }
 function syncUpSoon(){ if (!tok()) return; clearTimeout(syncTimer); syncTimer = setTimeout(syncUp, 1200); }
 async function syncUp(){ const t = tok(); if (!t) return;
@@ -185,6 +189,11 @@ let editingId=null, activeId=null;
 function suggHtml(c){ if(!c.edit) return ''; const e=c.edit, find=escapeHtml((e.find||'').slice(0,140)), repl=escapeHtml((e.replacement||'').slice(0,240));
   const label=e.op==='replace'?'Replace':e.op==='insert'?'Insert after':'Delete'; const inner=e.op==='delete'?`<del>${find}</del>`:e.op==='insert'?`<span style="color:var(--text-3)">…${find}</span> <ins>${repl}</ins>`:`<del>${find}</del> <ins>${repl}</ins>`;
   return `<div class="sugg"><div class="op"><i class="ti ti-pencil"></i>Suggested ${label}</div>${inner}</div>`; }
+function resolHtml(c){ if(!c.resolution) return ''; const r=c.resolution;
+  const label=r.state==='addressed'?'Addressed':r.state==='declined'?'Kept as written':'Noted';
+  const icon=r.state==='addressed'?'circle-check':r.state==='declined'?'circle-x':'info-circle';
+  const diff=(r.before||r.after)?`<div class="rdiff">${r.before?`<del>${escapeHtml(r.before)}</del>`:''}${r.after?` <ins>${escapeHtml(r.after)}</ins>`:''}</div>`:'';
+  return `<div class="resol resol-${r.state||'noted'}"><div class="resol-h"><i class="ti ti-${icon}"></i>${label} by the author${r.ts?` · ${(r.ts||'').slice(0,10)}`:''}</div>${r.note?`<div>${escapeHtml(r.note)}</div>`:''}${diff}</div>`; }
 function renderComments(){
   const pane=document.getElementById('comments'); const open=review.comments.filter(c=>c.status==='open').length;
   pane.innerHTML=`<div class="lbl">MY COMMENTS<span style="margin-left:auto">${review.comments.length} · ${open} open</span></div>`;
@@ -200,7 +209,7 @@ function renderComments(){
           <button class="icbtn cact" data-act="edit" title="Edit" style="width:25px;height:25px;font-size:14px"><i class="ti ti-pencil"></i></button>
           <button class="icbtn cact" data-act="del" title="Delete" style="width:25px;height:25px;font-size:14px"><i class="ti ti-trash"></i></button></span>
         ${stBadge}</div>
-      <div class="snip">"${escapeHtml((c.anchor.quote||'').slice(0,52))}"</div><div class="body" style="${resolved?'opacity:.5;text-decoration:line-through':''}">${escapeHtml(c.body)}</div>${suggHtml(c)}`;
+      <div class="snip">"${escapeHtml((c.anchor.quote||'').slice(0,52))}"</div><div class="body" style="${resolved?'opacity:.5;text-decoration:line-through':''}">${escapeHtml(c.body)}</div>${suggHtml(c)}${resolHtml(c)}`;
     if(c.id===activeId) card.classList.add('active');
     card.onmouseenter=()=>{ card.querySelector('.cactions').style.display='flex'; const s=card.querySelector('.status'); if(s&&s.textContent) s.style.visibility='hidden'; document.querySelector(`#doc .cmark[data-id="${c.id}"]`)?.classList.add('cmark-hot'); };
     card.onmouseleave=()=>{ card.querySelector('.cactions').style.display='none'; const s=card.querySelector('.status'); if(s) s.style.visibility=''; document.querySelector(`#doc .cmark[data-id="${c.id}"]`)?.classList.remove('cmark-hot'); };

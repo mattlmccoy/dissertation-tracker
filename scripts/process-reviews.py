@@ -244,6 +244,53 @@ def cmd_done(a):
     print(f"{C['g']}Job {a.job_id} marked done.{C['x']}")
 
 
+def advisor_path(data, advisor, ch):
+    return os.path.join(data, "advisor", advisor, f"{ch}.json")
+
+
+def cmd_advisor_list(a):
+    """List comments advisors submitted, with any recorded resolution."""
+    pull(a.data)
+    base = os.path.join(a.data, "advisor")
+    if not os.path.isdir(base):
+        print(f"{C['dim']}No advisor comments yet.{C['x']}"); return
+    for advisor in sorted(os.listdir(base)):
+        adir = os.path.join(base, advisor)
+        if not os.path.isdir(adir):
+            continue
+        for fn in sorted(f for f in os.listdir(adir) if f.endswith(".json")):
+            ch = fn[:-5]
+            for c in load(os.path.join(adir, fn), {"comments": []}).get("comments", []):
+                res = c.get("resolution")
+                tail = f" {C['g']}· resolved: {res.get('state')}{C['x']}" if res else ""
+                print(f"{C['c']}{advisor}{C['x']}/{C['b']}{ch}{C['x']} {C['c']}{c['id']}{C['x']} "
+                      f"{C['y']}[{c.get('tag','?')}]{C['x']} {C['dim']}{c.get('anchor',{}).get('section','')}{C['x']}{tail}")
+                print(f"   quote: “{(c.get('anchor',{}).get('quote','') or '')[:90]}”")
+                print(f"   body:  {c.get('body','').strip()}")
+                if c.get("edit"):
+                    e = c["edit"]; print(f"   edit:  {e.get('op')} → “{(e.get('replacement','') or '')[:80]}”")
+    print(f"{C['dim']}Record one: process-reviews.py advisor-resolve <ID> <chapter> <comment_id> "
+          f"<addressed|declined|noted> \"note\" [--before .. --after ..]{C['x']}")
+
+
+def cmd_advisor_resolve(a):
+    """Write how an advisor comment was addressed into their file (shown on their portal — keep the note plain, reviewer-facing)."""
+    pull(a.data)
+    p = advisor_path(a.data, a.advisor, a.chapter)
+    data = load(p, None)
+    if data is None:
+        sys.exit(f"{C['r']}no advisor file at {p}{C['x']}")
+    hit = next((c for c in data.get("comments", []) if c["id"] == a.comment_id), None)
+    if hit is None:
+        sys.exit(f"{C['r']}comment {a.comment_id} not found in {a.advisor}/{a.chapter}{C['x']}")
+    hit["resolution"] = {"state": a.state, "note": a.note, "ts": now()}
+    if a.before: hit["resolution"]["before"] = a.before
+    if a.after:  hit["resolution"]["after"] = a.after
+    dump(p, data)
+    _push_data(a, f"resolution: {a.advisor} {a.chapter} {a.comment_id} ({a.state})")
+    print(f"{C['g']}Recorded '{a.state}' on {a.advisor}/{a.chapter}/{a.comment_id}; the advisor sees it on their portal.{C['x']}")
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--data", default=DEFAULT_DATA, help="local clone of dissertation-tracker-data")
@@ -254,6 +301,8 @@ def main():
     sp = sub.add_parser("stage", help="mark comments staged + job done"); sp.add_argument("job_id"); sp.add_argument("--force", action="store_true"); sp.set_defaults(fn=cmd_stage)
     sp = sub.add_parser("respond", help="answer a question-comment (status=answered)"); sp.add_argument("chapter"); sp.add_argument("comment_id"); sp.add_argument("text"); sp.set_defaults(fn=cmd_respond)
     sp = sub.add_parser("done", help="mark any job done (e.g. after run-agents)"); sp.add_argument("job_id"); sp.set_defaults(fn=cmd_done)
+    sub.add_parser("advisor-list", help="list advisor-submitted comments + resolutions").set_defaults(fn=cmd_advisor_list)
+    sp = sub.add_parser("advisor-resolve", help="record how an advisor comment was addressed"); sp.add_argument("advisor"); sp.add_argument("chapter"); sp.add_argument("comment_id"); sp.add_argument("state", choices=["addressed","declined","noted"]); sp.add_argument("note"); sp.add_argument("--before", default=""); sp.add_argument("--after", default=""); sp.set_defaults(fn=cmd_advisor_resolve)
     a = p.parse_args()
     a.fn(a)
 
