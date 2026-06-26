@@ -17,7 +17,7 @@ script never invents edits. It only moves state and sets up the branch.
 
 Paths are auto-detected but can be overridden with --data / --diss.
 """
-import argparse, json, os, subprocess, sys, datetime, shutil
+import argparse, json, os, subprocess, sys, datetime, shutil, glob
 
 HOME = os.path.expanduser("~")
 DEFAULT_DATA = os.path.join(HOME, "code", "put_github_repos_here", "dissertation-tracker-data")
@@ -269,6 +269,15 @@ def cmd_done(a):
     print(f"{C['g']}Job {a.job_id} marked done.{C['x']}")
 
 
+def _clear_fig_cache(diss):
+    # preprocess.py reuses export/build/figs/<name>.pdf.png if it exists, so a regenerated figure
+    # PDF won't re-rasterize. Drop those cached PNGs (NOT the content-hashed tikz_*.png) so changed
+    # figures rebuild. Tikz pics are keyed by content and invalidate themselves.
+    for f in glob.glob(os.path.join(diss, "export", "build", "figs", "*.pdf.png")):
+        try: os.remove(f)
+        except OSError: pass
+
+
 def cmd_merge(a):
     """Approve a chapter: merge review-edits/<ch> -> main, regenerate + republish the chapter, mark its
     staged comments 'merged', close any merge job, and delete the branch."""
@@ -291,10 +300,13 @@ def cmd_merge(a):
     if p.returncode != 0:
         print(f"{C['y']}merged locally but push to main failed — retry `git -C '{a.diss}' push`.{C['x']}")
     # regenerate this chapter's reading HTML from the new main and republish it
+    _clear_fig_cache(a.diss)
     sh(["bash", "export/chapter-html.sh", ch], a.diss)
     src = os.path.join(a.diss, "export", "build", f"{ch}.html")
     if os.path.exists(src):
         shutil.copy(src, os.path.join(a.data, "content", f"{ch}.html"))
+    prev = os.path.join(a.data, "preview", f"{ch}.html")   # published == staged now; drop the preview
+    if os.path.exists(prev): os.remove(prev)
     # flip the chapter's staged/approved comments to merged
     rp = review_path(a.data, ch); review = load(rp, None); n = 0
     if review:
@@ -312,6 +324,34 @@ def cmd_merge(a):
     sh(["git", "branch", "-D", branch], a.diss, check=False)
     print(f"{C['g']}Merged {branch} -> main, republished {ch}, marked {n} comment(s) merged, deleted the branch.{C['x']}")
     print(f"{C['dim']}Note: global search index not rebuilt (do a full make-search-index if a section's text changed materially).{C['x']}")
+
+
+def cmd_preview(a):
+    """Build the chapter HTML from review-edits/<ch> WITHOUT merging, and publish it to
+    preview/<ch>.html so the reviewer can see the fully-rendered staged version (new figures
+    and text) before approving. Leaves main untouched."""
+    ch = a.chapter
+    branch = f"review-edits/{ch}"
+    pull(a.diss)
+    if not sh(["git", "rev-parse", "--verify", branch], a.diss, check=False) and \
+       not sh(["git", "ls-remote", "--heads", "origin", branch], a.diss, check=False):
+        sys.exit(f"{C['r']}no branch {branch} to preview{C['x']}")
+    cur = subprocess.run(["git", "branch", "--show-current"], cwd=a.diss, capture_output=True, text=True).stdout.strip() or "main"
+    sh(["git", "fetch", "origin", branch], a.diss, check=False)
+    sh(["git", "checkout", branch], a.diss)
+    try:
+        sh(["git", "merge", "--ff-only", f"origin/{branch}"], a.diss, check=False)
+        _clear_fig_cache(a.diss)
+        sh(["bash", "export/chapter-html.sh", ch], a.diss)
+        src = os.path.join(a.diss, "export", "build", f"{ch}.html")
+        if not os.path.exists(src):
+            sys.exit(f"{C['r']}preview build produced no HTML for {ch}{C['x']}")
+        os.makedirs(os.path.join(a.data, "preview"), exist_ok=True)
+        shutil.copy(src, os.path.join(a.data, "preview", f"{ch}.html"))
+    finally:
+        sh(["git", "checkout", cur], a.diss, check=False)
+    _push_data(a, f"preview: rendered staged {ch} from {branch}")
+    print(f"{C['g']}Built preview/{ch}.html from {branch} — the reviewer's Preview button now shows the rendered staged version. main untouched.{C['x']}")
 
 
 def advisor_path(data, advisor, ch):
@@ -372,6 +412,7 @@ def main():
     sp = sub.add_parser("respond", help="answer a question-comment (status=answered)"); sp.add_argument("chapter"); sp.add_argument("comment_id"); sp.add_argument("text"); sp.set_defaults(fn=cmd_respond)
     sp = sub.add_parser("note", help="attach an explanation (+optional staged-edit diff) to a comment, keep its status"); sp.add_argument("chapter"); sp.add_argument("comment_id"); sp.add_argument("text"); sp.add_argument("--before", default=""); sp.add_argument("--after", default=""); sp.set_defaults(fn=cmd_note)
     sp = sub.add_parser("merge", help="merge review-edits/<ch> -> main, republish, mark merged"); sp.add_argument("chapter"); sp.set_defaults(fn=cmd_merge)
+    sp = sub.add_parser("preview", help="build review-edits/<ch> into preview/<ch>.html (no merge)"); sp.add_argument("chapter"); sp.set_defaults(fn=cmd_preview)
     sp = sub.add_parser("done", help="mark any job done (e.g. after run-agents)"); sp.add_argument("job_id"); sp.set_defaults(fn=cmd_done)
     sub.add_parser("advisor-list", help="list advisor-submitted comments + resolutions").set_defaults(fn=cmd_advisor_list)
     sp = sub.add_parser("advisor-resolve", help="record how an advisor comment was addressed"); sp.add_argument("advisor"); sp.add_argument("chapter"); sp.add_argument("comment_id"); sp.add_argument("state", choices=["addressed","declined","noted"]); sp.add_argument("note"); sp.add_argument("--before", default=""); sp.add_argument("--after", default=""); sp.set_defaults(fn=cmd_advisor_resolve)

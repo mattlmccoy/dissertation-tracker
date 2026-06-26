@@ -89,6 +89,7 @@ if (localStorage.getItem('theme') === 'dark') document.documentElement.classList
 
 // ---------- content (GitHub-pulled; localhost dev-fallback for UI work only) ----------
 async function loadChapter(ch){
+  previewing = false;
   read.innerHTML = `<div class="empty"><i class="ti ti-loader-2" style="font-size:22px"></i><div style="margin-top:8px">Loading chapter ${chMeta(ch).n}…</div></div>`;
   const dev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
   if (dev){ try { const r = await fetch(`./chapters/${ch}.html`); if (r.ok){ renderDoc(await r.text()); return; } } catch(e){} }
@@ -763,14 +764,24 @@ function mapCollapsedIndex(raw, collapsedIdx){            // index in whitespace
 }
 function showApproveBar(){
   document.getElementById('approvebar')?.remove();
-  const staged = (review.comments||[]).filter(c => c.staged_edit && ['staged','approved'].includes(c.status));
+  const staged = (review.comments||[]).filter(c => ['staged','approved'].includes(c.status));   // any staged change, inline-diff or not
   if (!staged.length) return;
   const allApproved = staged.every(c => c.status === 'approved');
+  const inlineN = staged.filter(c => c.staged_edit).length;
+  const note = inlineN === staged.length ? `shown inline as <span class="tc-legend"><del>old</del> <ins>new</ins></span>`
+             : inlineN ? `${inlineN} shown inline; figure/structure changes need a preview`
+             : `figure or structure changes — preview to see them rendered`;
   const bar = document.createElement('div'); bar.id = 'approvebar'; bar.className = 'approvebar';
-  bar.innerHTML = `<i class="ti ti-git-pull-request"></i><span><b>${staged.length}</b> staged edit${staged.length>1?'s':''} in this chapter — shown inline as <span class="tc-legend"><del>old</del> <ins>new</ins></span>. Review, then merge to the dissertation.</span>
-    <button class="btn ${allApproved?'':'btn-primary'}" id="approve-btn" style="margin-left:auto" ${allApproved?'disabled':''}>${allApproved?'Merge requested ✓':'Approve & merge chapter'}</button>`;
+  const left = previewing
+    ? `<i class="ti ti-eye"></i><span><b>Previewing the rendered staged version</b> — figures and text as they'll look after merge. Nothing is merged yet.</span>`
+    : `<i class="ti ti-git-pull-request"></i><span><b>${staged.length}</b> staged change${staged.length>1?'s':''} in this chapter — ${note}.</span>`;
+  const prevBtn = previewing
+    ? `<button class="btn btn-primary" id="preview-btn" style="margin-left:auto"><i class="ti ti-arrow-back-up"></i>Exit preview</button>`
+    : `<button class="btn" id="preview-btn" style="margin-left:auto"><i class="ti ti-eye"></i>Preview rendered</button>`;
+  bar.innerHTML = `${left}${prevBtn}<button class="btn ${allApproved?'':'btn-primary'}" id="approve-btn" ${allApproved?'disabled':''}>${allApproved?'Merge requested ✓':'Approve & merge'}</button>`;
   read.prepend(bar);
   bar.querySelector('#approve-btn').onclick = approveChapter;
+  bar.querySelector('#preview-btn').onclick = () => togglePreview(current);
 }
 async function approveChapter(){
   const t = tok(); if (!t){ flash('Add your access token first.'); return; }
@@ -780,10 +791,24 @@ async function approveChapter(){
     const { json, sha } = await getJson(t, 'jobs.json'); const jobs = Array.isArray(json) ? json : [];
     jobs.push({ id:'j_'+Date.now().toString(36), type:'merge', chapter:current, status:'queued', requested_ts:new Date().toISOString() });
     await putJson(t, 'jobs.json', jobs, sha, 'review: approve+merge '+current);
-    review.comments.forEach(c => { if (c.staged_edit && c.status==='staged') c.status = 'approved'; });
+    review.comments.forEach(c => { if (c.status==='staged') c.status = 'approved'; });
     save(); await syncUp(); renderComments(); refreshStaged();
     flash('Approved — queued for merge into the dissertation.');
   } catch(e){ flash('Approve failed: '+e.message); }
+}
+// load the branch-built rendered version (figures + text) from preview/<ch>.html — without merging
+let previewing = false;
+async function togglePreview(ch){
+  if (previewing){ previewing = false; loadChapter(ch); return; }
+  const t = tok(); const dev = location.hostname==='localhost' || location.hostname==='127.0.0.1';
+  flash('Loading the rendered staged version…');
+  try {
+    let html = null;
+    if (dev){ const r = await fetch('./preview/'+ch+'.html'); if (r.ok) html = await r.text(); }
+    if (!html && t){ const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/preview/${ch}.html?t=${Date.now()}`, { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' }); if (r.ok) html = await r.text(); }
+    if (!html){ flash('No preview built yet for this chapter — it builds when changes are staged.'); return; }
+    previewing = true; renderDoc(html);
+  } catch(e){ flash('Preview failed: '+e.message); }
 }
 function markFigure(doc, c){
   const figs = [...doc.querySelectorAll('figure')];
