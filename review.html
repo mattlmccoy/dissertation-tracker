@@ -97,6 +97,38 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;pad
 .popover textarea:focus{border-color:var(--accent)}
 .empty{max-width:440px;margin:16vh auto;text-align:center;color:var(--text-2)}
 .katex{font-size:1.02em}
+/* inline comment highlights */
+#doc mark.cmark{background:color-mix(in srgb, var(--accent) 16%, transparent);border-radius:2px;padding:.5px 0;cursor:pointer;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+#doc mark.cmark[data-tag=figure]{background:color-mix(in srgb,var(--figure) 18%,transparent)}
+#doc mark.cmark[data-tag=wording]{background:color-mix(in srgb,var(--wording) 22%,transparent)}
+#doc mark.cmark[data-tag=citation]{background:color-mix(in srgb,var(--citation) 16%,transparent)}
+#doc mark.cmark[data-tag=question]{background:color-mix(in srgb,var(--question) 20%,transparent)}
+#doc mark.cmark.cmark-hot{outline:1.5px solid var(--accent);outline-offset:1px}
+#doc .cmark-el{border-left:2px solid var(--mk,var(--accent));padding-left:10px;margin-left:-12px;cursor:pointer}
+#doc figure.fig-commentable{cursor:pointer;border-radius:var(--r-sm);transition:box-shadow .12s} #doc img{cursor:pointer}
+#doc figure.fig-commentable:hover{box-shadow:0 0 0 2px var(--accent-bg)}
+#doc figure.cmark-fig{box-shadow:0 0 0 2px var(--mk,var(--accent))}
+/* comment filter bar */
+.cbar{display:flex;gap:6px;margin-bottom:12px}
+.csel{flex:1;min-width:0;font:inherit;font-size:11.5px;color:var(--text-2);background:var(--bg);border:.5px solid var(--border);border-radius:var(--r-sm);padding:4px 6px;outline:none}
+.csort{font-size:11.5px;color:var(--text-2);background:var(--bg);border:.5px solid var(--border);border-radius:var(--r-sm);padding:4px 8px;white-space:nowrap}
+.csort:hover{background:var(--bg-3)}
+.cempty{font-size:12.5px;color:var(--text-3);padding:8px 2px}
+.ccard.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.ccard .cresp{margin-top:8px;padding:8px 10px;background:var(--success-bg);border-radius:var(--r-sm);font-size:12.5px;line-height:1.5;color:var(--text)}
+.ccard .cresp-h{display:flex;align-items:center;gap:4px;font-size:10.5px;font-weight:500;color:var(--success);margin-bottom:4px}
+/* send menu */
+#sendmenu .smi{display:flex;gap:10px;align-items:flex-start;padding:9px 10px;border-radius:7px;cursor:pointer;font-size:13px}
+#sendmenu .smi i{font-size:17px;color:var(--text-2);margin-top:1px} #sendmenu .smi-d{font-size:11px;color:var(--text-3)}
+/* focus mode */
+body.focusmode .nav,body.focusmode .comments{display:none!important}
+body.focusmode #doc{max-width:760px}
+/* help overlay */
+#helpov{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.32);display:flex;align-items:center;justify-content:center}
+.help-card{background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-lg);padding:20px 22px;width:min(440px,92%);box-shadow:0 20px 60px rgba(0,0,0,.28)}
+.help-h{font-size:15px;font-weight:600;margin-bottom:14px}
+.help-row{display:flex;align-items:center;gap:12px;padding:5px 0;font-size:13px;color:var(--text-2)}
+.help-row kbd{flex:0 0 130px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;background:var(--bg-3);border:.5px solid var(--border);border-radius:5px;padding:2px 7px;color:var(--text)}
 </style>
 </head>
 <body>

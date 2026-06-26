@@ -107,6 +107,12 @@ def cmd_list(a):
         ch = j["chapter"]
         tex = tex_for(a.diss, ch)
         ok = "✓" if os.path.exists(tex) else f"{C['r']}MISSING{C['x']}"
+        if j.get("type") == "run-agents":
+            print(f"{C['c']}{j['id']}{C['x']}  {C['b']}{ch}{C['x']}  →  {C['y']}run agents{C['x']}: "
+                  f"{', '.join(j.get('agents', []))}   on chapters/{ch}.tex {ok}")
+            print(f"   {C['dim']}Run the agent(s) in-session on this chapter, then: "
+                  f"process-reviews.py done {j['id']}{C['x']}\n")
+            continue
         review, cmts = comments_for(a.data, j)
         print(f"{C['c']}{j['id']}{C['x']}  {C['b']}{ch}{C['x']}  →  review-edits/{ch}   "
               f"target: chapters/{ch}.tex {ok}   ({len(cmts)} comment(s))")
@@ -114,12 +120,12 @@ def cmd_list(a):
             tag = c.get("tag", "?")
             sec = c.get("anchor", {}).get("section", "")
             quote = (c.get("anchor", {}).get("quote", "") or "").replace("\n", " ")[:90]
-            print(f"   {C['y']}[{tag}]{C['x']} {C['dim']}{sec}{C['x']}")
+            print(f"   {C['c']}{c['id']}{C['x']} {C['y']}[{tag}]{C['x']} {C['dim']}{sec}{C['x']}")
             print(f"      quote: “{quote}”")
             print(f"      ask:   {c.get('body','').strip()}")
         print()
-    print(f"{C['dim']}Next: process-reviews.py start <job_id>  → make edits → "
-          f"process-reviews.py stage <job_id>{C['x']}")
+    print(f"{C['dim']}apply-edits → start <job> → edit → stage <job>   |   "
+          f"question → respond <chapter> <comment_id> \"answer\"   |   run-agents → done <job>{C['x']}")
 
 
 def cmd_start(a):
@@ -182,6 +188,48 @@ def cmd_stage(a):
     print(f"{C['dim']}The app will show these as 'staged' with the branch on next open.{C['x']}")
 
 
+def _push_data(a, msg):
+    sh(["git", "add", "-A"], a.data)
+    sh(["git", "commit", "-m", msg], a.data, check=False)
+    push = subprocess.run(["git", "push", "origin", "HEAD"], cwd=a.data, capture_output=True, text=True)
+    if push.returncode != 0:
+        print(f"{C['y']}local change written, but push failed — retry `git -C {a.data} push`.{C['x']}")
+
+
+def cmd_respond(a):
+    """Answer a question-comment: set claude.response + status='answered'."""
+    pull(a.data)
+    rp = review_path(a.data, a.chapter)
+    review = load(rp, None)
+    if review is None:
+        sys.exit(f"{C['r']}no review file at {rp}{C['x']}")
+    hit = next((c for c in review.get("comments", []) if c["id"] == a.comment_id), None)
+    if hit is None:
+        sys.exit(f"{C['r']}comment {a.comment_id} not in {a.chapter}{C['x']}")
+    hit.setdefault("claude", {})
+    hit["claude"]["response"] = a.text
+    hit["claude"]["ts"] = now()
+    hit["status"] = "answered"
+    dump(rp, review)
+    _push_data(a, f"review: answer {a.comment_id} in {a.chapter}")
+    print(f"{C['g']}Answered {a.comment_id}; the app shows it as 'answered' with your reply.{C['x']}")
+
+
+def cmd_done(a):
+    """Mark any job done (e.g. after running agents in-session)."""
+    pull(a.data)
+    jobs = load(jobs_path(a.data), [])
+    if not any(j.get("id") == a.job_id for j in jobs):
+        sys.exit(f"{C['r']}job {a.job_id} not found{C['x']}")
+    for j in jobs:
+        if j.get("id") == a.job_id:
+            j["status"] = "done"
+            j["done_ts"] = now()
+    dump(jobs_path(a.data), jobs)
+    _push_data(a, f"review: job {a.job_id} done")
+    print(f"{C['g']}Job {a.job_id} marked done.{C['x']}")
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--data", default=DEFAULT_DATA, help="local clone of dissertation-tracker-data")
@@ -190,6 +238,8 @@ def main():
     sub.add_parser("list", help="show queued jobs + comments").set_defaults(fn=cmd_list)
     sp = sub.add_parser("start", help="branch off main for a job"); sp.add_argument("job_id"); sp.set_defaults(fn=cmd_start)
     sp = sub.add_parser("stage", help="mark comments staged + job done"); sp.add_argument("job_id"); sp.add_argument("--force", action="store_true"); sp.set_defaults(fn=cmd_stage)
+    sp = sub.add_parser("respond", help="answer a question-comment (status=answered)"); sp.add_argument("chapter"); sp.add_argument("comment_id"); sp.add_argument("text"); sp.set_defaults(fn=cmd_respond)
+    sp = sub.add_parser("done", help="mark any job done (e.g. after run-agents)"); sp.add_argument("job_id"); sp.set_defaults(fn=cmd_done)
     a = p.parse_args()
     a.fn(a)
 

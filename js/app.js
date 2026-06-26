@@ -30,7 +30,7 @@ let reviewSha = null, syncTimer = null, scrollSaveT = null;
 async function syncDown(){
   const t = tok(); if (!t) return;
   try { const { json, sha } = await getJson(t, reviewPath(current)); reviewSha = sha;
-    if (json){ review = mergeReview(review, json); save(); renderComments(); if (document.getElementById('doc')) buildNav(); } }
+    if (json){ review = mergeReview(review, json); save(); renderComments(); if (document.getElementById('doc')){ buildNav(); paintHighlights(); } } }
   catch(e){ /* offline / first time */ }
 }
 function syncUpSoon(){ if (!tok()) return; clearTimeout(syncTimer); syncTimer = setTimeout(syncUp, 1200); }
@@ -48,16 +48,19 @@ function renderTopbar(){
     <button class="chsel" id="chsel"><i class="ti ti-book-2"></i><span>Chapter ${m.n} · ${shortTitle(m.title)}</span><i class="ti ti-chevron-down" style="font-size:15px;color:var(--text-3)"></i></button>
     <div class="search"><i class="ti ti-search"></i><input id="search" placeholder="Search chapter · ⌘\\ for all"></div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:3px">
+      <button class="icbtn" id="btn-focus" title="Focus mode (f)"><i class="ti ti-arrows-diagonal-minimize-2"></i></button>
       <button class="icbtn" id="btn-history" title="History"><i class="ti ti-history"></i></button>
       <button class="icbtn" id="btn-theme" title="Theme"><i class="ti ti-moon"></i></button>
       <button class="btn btn-primary" id="btn-send"><i class="ti ti-send"></i>Send to Claude</button>
-      <button class="icbtn" id="btn-more"><i class="ti ti-dots"></i></button>
+      <button class="icbtn" id="btn-help" title="Shortcuts (?)"><i class="ti ti-keyboard"></i></button>
     </div>`;
   document.getElementById('btn-home').onclick = enterHome;
   document.getElementById('chsel').onclick = openChapterMenu;
   document.getElementById('btn-theme').onclick = toggleTheme;
-  document.getElementById('btn-send').onclick = sendToClaude;
+  document.getElementById('btn-send').onclick = openSendMenu;
   document.getElementById('btn-history').onclick = showHistory;
+  document.getElementById('btn-focus').onclick = toggleFocus;
+  document.getElementById('btn-help').onclick = toggleHelp;
   const si = document.getElementById('search');
   si.addEventListener('keydown', e => { if (e.key === 'Enter') runSearch(si.value); if (e.key === 'Escape'){ si.value=''; clearSearch(); } });
 }
@@ -108,9 +111,33 @@ function renderDoc(fragment){
   const doc = document.getElementById('doc');
   fixFootnotes(doc);
   runKatex(doc);
+  wireFigures(doc);
   buildNav();
+  paintHighlights();
   restoreCursor();
   syncDown();
+}
+// ---------- figure commenting ----------
+function figureLabel(fig){
+  const cap = fig.querySelector('figcaption')?.textContent.trim() || '';
+  const m = cap.match(/^(Figure|Fig\.?|Table)\s*[\d.]+/i);
+  return { quote: cap.slice(0, 150), label: (m ? m[0] : '') , id: fig.querySelector('img')?.getAttribute('src')?.slice(-40) || '' };
+}
+function wireFigures(doc){
+  doc.querySelectorAll('figure, img').forEach(el => {
+    const fig = el.tagName === 'FIGURE' ? el : (el.closest('figure') || el);
+    if (fig.dataset.figWired) return; fig.dataset.figWired = '1'; fig.classList.add('fig-commentable');
+    fig.addEventListener('click', e => {
+      if (window.getSelection().toString().trim()) return;     // a text drag, not a figure click
+      e.stopPropagation(); document.getElementById('pop')?.remove();
+      const info = figureLabel(fig);
+      const rr = read.getBoundingClientRect(), fr = fig.getBoundingClientRect();
+      const rects = [{ x:fr.x-rr.x, y:fr.y-rr.y+read.scrollTop, w:fr.width, h:fr.height }];
+      pending = { quote: info.label ? `${info.label}${info.quote?': '+info.quote:''}` : (info.quote || 'Figure'),
+                  kind:'figure', figure:info.id, section: headingFor(fig), confirmed:true, rects:[] };
+      showPopover(pending, rects, 'figure');
+    });
+  });
 }
 function runKatex(el){
   if (!window.katex){ setTimeout(() => runKatex(el), 100); return; }
@@ -195,48 +222,78 @@ function headingFor(node){
     while (p){ if (/^H[1-3]$/.test(p.tagName)) return p.textContent.trim(); p = p.previousElementSibling; } el = el.parentElement; }
   return '';
 }
-function showPopover(anchor, rects){
+function showPopover(anchor, rects, defaultTag='claim'){
   document.getElementById('pop')?.remove();
   const top = Math.max(...rects.map(r => r.y + r.h)) + 10;
+  const isFig = anchor.kind === 'figure';
   const pop = document.createElement('div'); pop.id = 'pop'; pop.className = 'popover';
   pop.style.top = top + 'px'; pop.style.left = '50%'; pop.style.transform = 'translateX(-50%)';
   pop.innerHTML = `
-    <div class="head"><i class="ti ti-link" style="margin-right:5px"></i>Commenting on
-      <span class="loc"><i class="ti ti-circle-check-filled"></i>${anchor.section ? '§ '+anchor.section.slice(0,38) : 'this passage'}</span></div>
-    <div class="snip">"${anchor.quote.slice(0,150)}"</div>
+    <div class="head"><i class="ti ti-${isFig?'photo':'link'}" style="margin-right:5px"></i>Commenting on ${isFig?'figure':''}
+      <span class="loc"><i class="ti ti-circle-check-filled"></i>${anchor.section ? '§ '+anchor.section.slice(0,38) : (isFig?'this figure':'this passage')}</span></div>
+    <div class="snip">"${escapeHtml(anchor.quote.slice(0,150))}"</div>
     <div class="tags" id="tags"></div>
-    <textarea id="cbody" placeholder="Leave a comment…"></textarea>
+    <textarea id="cbody" placeholder="Leave a comment…  (1–5 to tag · ⌘↵ to save)"></textarea>
     <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-primary" id="csave">Comment</button><button class="btn" id="ccancel">Cancel</button></div>`;
   read.appendChild(pop);
-  let tag = 'claim'; const tr = pop.querySelector('#tags');
+  let tag = defaultTag; const tr = pop.querySelector('#tags');
   TAGS.forEach(t => { const b = document.createElement('button'); b.textContent = t; b.dataset.tag = t;
     const pick = () => { tag = t;
       [...tr.children].forEach(x => { x.className = ''; x.style.background = 'transparent'; x.style.color = 'var(--text-2)'; x.style.borderColor = 'var(--border)'; });
       b.className = 'on'; b.style.background = `var(--${t}-bg)`; b.style.color = `var(--${t})`; b.style.borderColor = 'transparent'; };
-    b.onclick = pick; tr.appendChild(b); if (t === 'claim') pick(); });
+    b.onclick = pick; tr.appendChild(b); if (t === defaultTag) pick(); });
   pop.querySelector('#cbody').focus();
-  pop.querySelector('#ccancel').onclick = () => { pop.remove(); window.getSelection().removeAllRanges(); };
-  pop.querySelector('#csave').onclick = () => {
-    review = addComment(review, { anchor:pending, tag, body:pop.querySelector('#cbody').value }); save(); syncUpSoon();
-    renderComments(); buildNav(); pop.remove(); window.getSelection().removeAllRanges();
-  };
+  const close = () => { pop.remove(); window.getSelection().removeAllRanges(); };
+  const commit = () => { review = addComment(review, { anchor:pending, kind:pending.kind, tag, body:pop.querySelector('#cbody').value });
+    save(); syncUpSoon(); renderComments(); buildNav(); paintHighlights(); pop.remove(); window.getSelection().removeAllRanges(); };
+  pop.querySelector('#ccancel').onclick = close;
+  pop.querySelector('#csave').onclick = commit;
+  pop._commit = commit; pop._pickTag = i => { const b = tr.children[i]; if (b) b.click(); };
 }
 
 // ---------- comments rail ----------
-let editingId = null;
+let editingId = null, activeCommentId = null;
+let cFilter = { status:'all', tag:'all', sort:'doc' };
+const STATUS_ORDER = ['all','open','queued','staged','answered','merged','resolved'];
+function docOrderIndex(){           // map comment id -> vertical position of its anchor in the doc
+  const map = {}; const order = [...document.querySelectorAll('#doc p, #doc li, #doc figure, #doc figcaption, #doc h2, #doc h3')];
+  review.comments.forEach(c => { const q = (c.anchor.quote||'').replace(/\s+/g,' ').trim().slice(0,30);
+    const i = order.findIndex(el => el.textContent.replace(/\s+/g,' ').includes(q)); map[c.id] = i < 0 ? 1e6 : i; });
+  return map;
+}
+function filteredComments(){
+  let cs = review.comments.filter(c =>
+    (cFilter.status === 'all' || c.status === cFilter.status) &&
+    (cFilter.tag === 'all' || c.tag === cFilter.tag));
+  if (cFilter.sort === 'new') cs = [...cs].sort((a,b) => (b.created_ts||'').localeCompare(a.created_ts||''));
+  else { const ord = docOrderIndex(); cs = [...cs].sort((a,b) => (ord[a.id]-ord[b.id]) || (a.created_ts||'').localeCompare(b.created_ts||'')); }
+  return cs;
+}
 function renderComments(){
   const pane = document.getElementById('comments');
   const open = review.comments.filter(c => c.status === 'open').length;
   pane.innerHTML = `<div class="lbl">COMMENTS<span style="margin-left:auto">${review.comments.length} · ${open} open</span></div>`;
-  if (!review.comments.length){ pane.innerHTML += `<div style="font-size:12.5px;color:var(--text-3);padding:8px 2px">Select text in the chapter to leave a comment.</div>`; return; }
-  review.comments.forEach(c => {
+  if (!review.comments.length){ pane.innerHTML += `<div style="font-size:12.5px;color:var(--text-3);padding:8px 2px">Select text or click a figure to leave a comment.</div>`; return; }
+  // filter / sort toolbar
+  const bar = document.createElement('div'); bar.className = 'cbar';
+  const present = new Set(review.comments.map(c => c.status));
+  bar.innerHTML = `<select class="csel" id="fstatus">${STATUS_ORDER.filter(s => s==='all'||present.has(s)).map(s => `<option value="${s}"${cFilter.status===s?' selected':''}>${s==='all'?'all status':s}</option>`).join('')}</select>
+    <select class="csel" id="ftag"><option value="all"${cFilter.tag==='all'?' selected':''}>all tags</option>${TAGS.map(t => `<option value="${t}"${cFilter.tag===t?' selected':''}>${t}</option>`).join('')}</select>
+    <button class="csort" id="fsort" title="Sort">${cFilter.sort==='doc'?'↓ document':'↓ newest'}</button>`;
+  pane.appendChild(bar);
+  bar.querySelector('#fstatus').onchange = e => { cFilter.status = e.target.value; renderComments(); };
+  bar.querySelector('#ftag').onchange = e => { cFilter.tag = e.target.value; renderComments(); };
+  bar.querySelector('#fsort').onclick = () => { cFilter.sort = cFilter.sort==='doc'?'new':'doc'; renderComments(); };
+  const list = filteredComments();
+  if (!list.length){ pane.appendChild(Object.assign(document.createElement('div'), { className:'cempty', textContent:'No comments match this filter.' })); return; }
+  list.forEach(c => {
     const card = document.createElement('div'); card.className = 'ccard'; card.dataset.id = c.id;
     if (editingId === c.id){ card.style.cursor = 'default'; card.appendChild(editCard(c)); pane.appendChild(card); return; }
     const st = c.status;
-    const stColor = st==='staged'?'var(--info)':st==='merged'?'var(--success)':st==='queued'?'var(--warn)':st==='resolved'?'var(--text-3)':'var(--text-2)';
-    const stBg = st==='staged'?'var(--info-bg)':st==='merged'?'var(--success-bg)':st==='queued'?'var(--warn-bg)':'transparent';
+    const stColor = st==='staged'?'var(--info)':st==='merged'?'var(--success)':st==='queued'?'var(--warn)':st==='answered'?'var(--success)':st==='resolved'?'var(--text-3)':'var(--text-2)';
+    const stBg = st==='staged'?'var(--info-bg)':st==='merged'?'var(--success-bg)':st==='queued'?'var(--warn-bg)':st==='answered'?'var(--success-bg)':'transparent';
     card.innerHTML = `<div class="row">
-        <span class="chip" style="background:var(--${c.tag}-bg);color:var(--${c.tag})">${c.tag}</span>
+        <span class="chip" style="background:var(--${c.tag}-bg);color:var(--${c.tag})">${c.kind==='figure'?'<i class="ti ti-photo" style="font-size:11px;vertical-align:-1px;margin-right:2px"></i>':''}${c.tag}</span>
         <span class="cactions" style="margin-left:auto;display:none;gap:1px">
           <button class="icbtn cact" data-act="resolve" title="${st==='resolved'?'Reopen':'Resolve'}" style="width:25px;height:25px;font-size:14px"><i class="ti ti-${st==='resolved'?'rotate-clockwise':'check'}"></i></button>
           <button class="icbtn cact" data-act="edit" title="Edit" style="width:25px;height:25px;font-size:14px"><i class="ti ti-pencil"></i></button>
@@ -244,9 +301,11 @@ function renderComments(){
         <span class="status" style="background:${stBg};color:${stColor};${st==='open'?'display:none':''}">${st}</span></div>
       <div class="snip">"${escapeHtml((c.anchor.quote||'').slice(0,52))}"</div>
       <div class="body" style="${st==='resolved'?'opacity:.5;text-decoration:line-through':''}">${escapeHtml(c.body)}</div>
+      ${c.claude?.response ? `<div class="cresp"><div class="cresp-h"><i class="ti ti-robot-face"></i>Claude</div>${escapeHtml(c.claude.response)}</div>` : ''}
       ${c.claude?.branch ? `<div class="branch"><i class="ti ti-git-branch"></i>${escapeHtml(c.claude.branch)}</div>` : ''}`;
-    card.onmouseenter = () => { card.querySelector('.cactions').style.display='flex'; const s=card.querySelector('.status'); if (st!=='open') s.style.visibility='hidden'; };
-    card.onmouseleave = () => { card.querySelector('.cactions').style.display='none'; const s=card.querySelector('.status'); if (s) s.style.visibility=''; };
+    if (c.id === activeCommentId) card.classList.add('active');
+    card.onmouseenter = () => { card.querySelector('.cactions').style.display='flex'; const s=card.querySelector('.status'); if (st!=='open') s.style.visibility='hidden'; document.querySelector(`#doc .cmark[data-id="${c.id}"]`)?.classList.add('cmark-hot'); };
+    card.onmouseleave = () => { card.querySelector('.cactions').style.display='none'; const s=card.querySelector('.status'); if (s) s.style.visibility=''; document.querySelector(`#doc .cmark[data-id="${c.id}"]`)?.classList.remove('cmark-hot'); };
     card.querySelector('.snip').onclick = () => jumpTo(c);
     card.querySelector('.body').onclick = () => jumpTo(c);
     card.querySelectorAll('.cact').forEach(b => b.onclick = e => { e.stopPropagation(); commentAction(c.id, b.dataset.act); });
@@ -258,7 +317,7 @@ function commentAction(id, act){
   if (act === 'edit'){ editingId = id; renderComments(); return; }
   if (act === 'del'){ if (!confirm('Delete this comment?')) return; review = deleteComment(review, id); }
   else if (act === 'resolve'){ review = updateComment(review, id, { status: c.status==='resolved'?'open':'resolved' }); }
-  save(); syncUpSoon(); renderComments(); buildNav();
+  save(); syncUpSoon(); renderComments(); buildNav(); paintHighlights();
 }
 function editCard(c){
   const w = document.createElement('div'); let tag = c.tag;
@@ -271,13 +330,58 @@ function editCard(c){
     const pick = () => { tag = t; [...tr.children].forEach(x => { x.style.background='transparent'; x.style.color='var(--text-2)'; x.style.borderColor='var(--border)'; }); b.style.background=`var(--${t}-bg)`; b.style.color=`var(--${t})`; b.style.borderColor='transparent'; };
     b.onclick = pick; tr.appendChild(b); if (t === tag) pick(); });
   w.querySelector('#ecancel').onclick = () => { editingId = null; renderComments(); };
-  w.querySelector('#esave').onclick = () => { review = updateComment(review, c.id, { body:w.querySelector('#ebody').value, tag }); editingId = null; save(); syncUpSoon(); renderComments(); buildNav(); };
+  w.querySelector('#esave').onclick = () => { review = updateComment(review, c.id, { body:w.querySelector('#ebody').value, tag }); editingId = null; save(); syncUpSoon(); renderComments(); buildNav(); paintHighlights(); };
   return w;
 }
 function jumpTo(c){
+  activeCommentId = c.id;
+  const mark = document.querySelector(`#doc .cmark[data-id="${c.id}"], #doc .cmark-el[data-cid="${c.id}"], #doc figure[data-cid="${c.id}"]`);
   const q = (c.anchor.quote||'').replace(/\s+/g,' ').trim().slice(0,40);
-  const el = [...document.querySelectorAll('#doc p, #doc li, #doc figcaption, #doc h2, #doc h3')].find(p => p.textContent.replace(/\s+/g,' ').includes(q));
+  const el = mark || [...document.querySelectorAll('#doc p, #doc li, #doc figure, #doc figcaption, #doc h2, #doc h3')].find(p => p.textContent.replace(/\s+/g,' ').includes(q));
   if (el){ el.scrollIntoView({ behavior:'smooth', block:'center' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1500); }
+}
+function activateComment(id){
+  activeCommentId = id; renderComments();
+  const card = document.querySelector(`#comments .ccard[data-id="${id}"]`);
+  card?.scrollIntoView({ behavior:'smooth', block:'center' });
+  card?.classList.add('flash'); setTimeout(() => card?.classList.remove('flash'), 1500);
+}
+// wrap each comment's quoted text in a <mark> so commented passages are visible while reading
+function paintHighlights(){
+  const doc = document.getElementById('doc'); if (!doc) return;
+  doc.querySelectorAll('mark.cmark').forEach(m => { const p = m.parentNode; m.replaceWith(...m.childNodes); p.normalize(); });
+  doc.querySelectorAll('.cmark-el').forEach(e => { e.classList.remove('cmark-el'); e.onclick = null; delete e.dataset.cid; });
+  doc.querySelectorAll('figure[data-cid]').forEach(f => { f.classList.remove('cmark-fig'); delete f.dataset.cid; });
+  const blocks = [...doc.querySelectorAll('p, li, figcaption')];
+  review.comments.forEach(c => {
+    if (c.status === 'resolved') return;
+    if (c.kind === 'figure'){ markFigure(doc, c); return; }
+    const q = (c.anchor.quote||'').replace(/\s+/g,' ').trim(); if (q.length < 4) return;
+    const needle = q.slice(0, 50);
+    const el = blocks.find(e => e.textContent.replace(/\s+/g,' ').includes(needle.slice(0,40)));
+    if (!el) return;
+    if (!wrapInNode(el, needle, c)){ el.classList.add('cmark-el'); el.dataset.cid = c.id; el.style.setProperty('--mk', `var(--${c.tag})`); el.onclick = () => activateComment(c.id); }
+  });
+}
+function wrapInNode(el, needle, c){
+  const tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let node, probe = needle.slice(0, 30);
+  while ((node = tw.nextNode())){
+    const idx = node.nodeValue.indexOf(probe);
+    if (idx >= 0){
+      const r = document.createRange();
+      r.setStart(node, idx); r.setEnd(node, Math.min(node.nodeValue.length, idx + needle.length));
+      const mk = document.createElement('mark'); mk.className = 'cmark'; mk.dataset.id = c.id; mk.dataset.tag = c.tag;
+      try { r.surroundContents(mk); mk.onclick = e => { e.stopPropagation(); activateComment(c.id); }; return true; } catch(e){ return false; }
+    }
+  }
+  return false;
+}
+function markFigure(doc, c){
+  const figs = [...doc.querySelectorAll('figure')];
+  const q = (c.anchor.quote||'').replace(/^[^:]*:\s*/,'').replace(/\s+/g,' ').trim().slice(0,30);
+  const fig = figs.find(f => f.textContent.replace(/\s+/g,' ').includes(q)) || figs.find(f => f.querySelector('img')?.src.endsWith(c.anchor.figure||' '));
+  if (fig){ fig.classList.add('cmark-fig'); fig.dataset.cid = c.id; fig.style.setProperty('--mk', `var(--${c.tag})`); }
 }
 const escapeHtml = s => (s||'').replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
 
@@ -288,20 +392,41 @@ function runSearch(q){ clearSearch(); if (!q.trim()) return; const re = new RegE
 function clearSearch(){ document.querySelectorAll('#doc mark').forEach(m => m.replaceWith(...m.childNodes)); }
 
 // ---------- send to claude / cursor ----------
-async function sendToClaude(){
-  const open = review.comments.filter(c => c.status === 'open');
-  if (!open.length){ flash('No open comments to send.'); return; }
+function openSendMenu(){
+  document.getElementById('sendmenu')?.remove();
+  const menu = document.createElement('div'); menu.id = 'sendmenu';
+  menu.style.cssText = 'position:absolute;top:50px;right:52px;z-index:45;background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-md);box-shadow:0 10px 30px rgba(0,0,0,.16);padding:6px;min-width:248px';
+  const open = review.comments.filter(c => c.status === 'open').length;
+  menu.innerHTML = `
+    <div class="smi" data-type="apply-edits"><i class="ti ti-git-pull-request"></i><div><div style="font-weight:500">Apply edits${open?` · ${open}`:''}</div><div class="smi-d">stage LaTeX edits on review-edits/${current}</div></div></div>
+    <div class="smi" data-type="run-agents"><i class="ti ti-robot-face"></i><div><div style="font-weight:500">Run review agents</div><div class="smi-d">dissertation-adversary read-only critique</div></div></div>`;
+  document.body.appendChild(menu);
+  menu.querySelectorAll('.smi').forEach(el => { el.onmouseenter = () => el.style.background='var(--bg-3)'; el.onmouseleave = () => el.style.background='transparent';
+    el.onclick = () => { menu.remove(); sendJob(el.dataset.type); }; });
+  setTimeout(() => document.addEventListener('click', function h(e){ if (!menu.contains(e.target) && e.target.id!=='btn-send' && !e.target.closest?.('#btn-send')){ menu.remove(); document.removeEventListener('click', h); } }), 0);
+}
+async function sendJob(type){
   const t = tok(); if (!t){ flash('Add your access token first (click a chapter → connect).'); return; }
-  flash('Sending…');
   try {
-    await syncUp();                                   // make sure the comments are on GitHub first
+    await syncUp();
     const { json, sha } = await getJson(t, 'jobs.json');
     const jobs = Array.isArray(json) ? json : [];
+    if (type === 'run-agents'){
+      flash('Requesting agent review…');
+      jobs.push({ id:'j_'+Date.now().toString(36), type:'run-agents', chapter:current,
+        agents:['dissertation-adversary'], status:'queued', requested_ts:new Date().toISOString() });
+      await putJson(t, 'jobs.json', jobs, sha, 'review: agents '+current);
+      flash(`Requested adversary review of Chapter ${chMeta(current).n}`);
+      return;
+    }
+    const open = review.comments.filter(c => c.status === 'open');
+    if (!open.length){ flash('No open comments to send.'); return; }
+    flash('Sending…');
     jobs.push({ id:'j_'+Date.now().toString(36), type:'apply-edits', chapter:current,
       comment_ids: open.map(c => c.id), status:'queued', requested_ts:new Date().toISOString() });
     await putJson(t, 'jobs.json', jobs, sha, 'review: queue '+current);
     open.forEach(c => { review = updateComment(review, c.id, { status:'queued' }); });
-    save(); await syncUp(); renderComments(); buildNav();
+    save(); await syncUp(); renderComments(); buildNav(); paintHighlights();
     flash(`Queued ${open.length} comment${open.length>1?'s':''} → review-edits/${current}`);
   } catch(e){ flash('Send failed: '+e.message); }
 }
@@ -456,8 +581,51 @@ function showSearchResults(q, hits){
   setTimeout(() => document.addEventListener('click', function h(e){ if (!p.contains(e.target)){ p.remove(); document.removeEventListener('click', h); } }), 0);
 }
 
+// ---------- panes / focus / keyboard ----------
+function toggleNav(){ const n = document.getElementById('nav'); if (n) n.style.display = n.style.display==='none'?'':'none'; }
+function toggleRail(){ const c = document.getElementById('comments'); if (c) c.style.display = c.style.display==='none'?'':'none'; }
+function toggleFocus(){ document.body.classList.toggle('focusmode'); flash(document.body.classList.contains('focusmode')?'Focus mode on — press f to exit':'Focus mode off'); }
+function cycleComment(dir){
+  const list = filteredComments(); if (!list.length) return;
+  let i = list.findIndex(c => c.id === activeCommentId);
+  i = i < 0 ? (dir > 0 ? 0 : list.length-1) : (i + dir + list.length) % list.length;
+  const c = list[i]; activeCommentId = c.id; renderComments(); jumpTo(c);
+  document.querySelector(`#comments .ccard[data-id="${c.id}"]`)?.scrollIntoView({ block:'nearest' });
+}
+const SHORTCUTS = [['j / k','next / previous comment'],['↵ on a comment','jump to its place in the text'],['f','focus (distraction-free) mode'],['[ / ]','collapse left nav / comments rail'],['/','search this chapter'],['⌘\\','search the whole dissertation'],['⌘↵','Send to Claude'],['⌥1–5 (in popover)','pick a tag'],['? ','this help']];
+function toggleHelp(){
+  const ex = document.getElementById('helpov'); if (ex){ ex.remove(); return; }
+  const ov = document.createElement('div'); ov.id = 'helpov';
+  ov.innerHTML = `<div class="help-card"><div class="help-h">Keyboard shortcuts</div>${SHORTCUTS.map(([k,d]) => `<div class="help-row"><kbd>${k}</kbd><span>${d}</span></div>`).join('')}<div style="text-align:right;margin-top:10px"><button class="btn" id="help-x">Close</button></div></div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#help-x').onclick = () => ov.remove();
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+}
+window.addEventListener('keydown', e => {
+  const pop = document.getElementById('pop');
+  if (pop){
+    if (e.key === 'Escape'){ pop.querySelector('#ccancel').click(); return; }
+    if ((e.metaKey||e.ctrlKey) && e.key === 'Enter'){ e.preventDefault(); pop._commit(); return; }
+    if (e.altKey && e.key >= '1' && e.key <= '5'){ e.preventDefault(); pop._pickTag(+e.key - 1); return; }
+    return;
+  }
+  if ((e.metaKey||e.ctrlKey) && e.key === '\\'){ e.preventDefault(); const s = document.getElementById('search'); if (s && s.value.trim()) globalSearch(s.value); else s?.focus(); return; }
+  if ((e.metaKey||e.ctrlKey) && e.key === 'Enter'){ e.preventDefault(); if (document.getElementById('doc')) openSendMenu(); return; }
+  const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || '');
+  if (typing){ if (e.key === 'Escape') document.activeElement.blur(); return; }
+  if (!document.getElementById('doc') && !['?','f'].includes(e.key)) return;
+  switch (e.key){
+    case 'j': e.preventDefault(); cycleComment(1); break;
+    case 'k': e.preventDefault(); cycleComment(-1); break;
+    case 'f': toggleFocus(); break;
+    case '[': toggleNav(); break;
+    case ']': toggleRail(); break;
+    case '/': e.preventDefault(); document.getElementById('search')?.focus(); break;
+    case '?': toggleHelp(); break;
+  }
+});
+
 // ---------- boot ----------
 enterHome();
 document.addEventListener('mouseover', e => { const c = e.target.closest?.('.chcard'); if (c) c.style.borderColor='var(--border-2)'; });
 document.addEventListener('mouseout', e => { const c = e.target.closest?.('.chcard'); if (c) c.style.borderColor='var(--border)'; });
-window.addEventListener('keydown', e => { if ((e.metaKey||e.ctrlKey) && e.key === '\\'){ e.preventDefault(); const s = document.getElementById('search'); if (s && s.value.trim()) globalSearch(s.value); else s?.focus(); } });
