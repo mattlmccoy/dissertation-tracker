@@ -17,7 +17,7 @@ script never invents edits. It only moves state and sets up the branch.
 
 Paths are auto-detected but can be overridden with --data / --diss.
 """
-import argparse, json, os, subprocess, sys, datetime
+import argparse, json, os, subprocess, sys, datetime, shutil
 
 HOME = os.path.expanduser("~")
 DEFAULT_DATA = os.path.join(HOME, "code", "put_github_repos_here", "dissertation-tracker-data")
@@ -112,6 +112,10 @@ def cmd_list(a):
                   f"{', '.join(j.get('agents', []))}   on chapters/{ch}.tex {ok}")
             print(f"   {C['dim']}Run the agent(s) in-session on this chapter, then: "
                   f"process-reviews.py done {j['id']}{C['x']}\n")
+            continue
+        if j.get("type") == "merge":
+            print(f"{C['c']}{j['id']}{C['x']}  {C['b']}{ch}{C['x']}  →  {C['g']}APPROVED — merge requested{C['x']}   review-edits/{ch} → main")
+            print(f"   {C['dim']}Matt approved the staged edits. Run: process-reviews.py merge {ch}{C['x']}\n")
             continue
         review, cmts = comments_for(a.data, j)
         print(f"{C['c']}{j['id']}{C['x']}  {C['b']}{ch}{C['x']}  →  review-edits/{ch}   "
@@ -242,9 +246,12 @@ def cmd_note(a):
     hit.setdefault("claude", {})
     hit["claude"]["response"] = a.text
     hit["claude"]["ts"] = now()
+    if a.before or a.after:                      # record the in-context diff the reviewer renders inline
+        hit["staged_edit"] = {"before": a.before, "after": a.after}
     dump(rp, review)
     _push_data(a, f"review: note on {a.comment_id} in {a.chapter}")
-    print(f"{C['g']}Noted {a.comment_id} (status kept as '{hit.get('status')}'); the app shows your explanation.{C['x']}")
+    extra = " (+staged_edit diff)" if (a.before or a.after) else ""
+    print(f"{C['g']}Noted {a.comment_id} (status kept as '{hit.get('status')}'){extra}; the app shows your explanation.{C['x']}")
 
 
 def cmd_done(a):
@@ -260,6 +267,51 @@ def cmd_done(a):
     dump(jobs_path(a.data), jobs)
     _push_data(a, f"review: job {a.job_id} done")
     print(f"{C['g']}Job {a.job_id} marked done.{C['x']}")
+
+
+def cmd_merge(a):
+    """Approve a chapter: merge review-edits/<ch> -> main, regenerate + republish the chapter, mark its
+    staged comments 'merged', close any merge job, and delete the branch."""
+    ch = a.chapter
+    branch = f"review-edits/{ch}"
+    pull(a.diss)
+    if not sh(["git", "rev-parse", "--verify", branch], a.diss, check=False) and \
+       not sh(["git", "ls-remote", "--heads", "origin", branch], a.diss, check=False):
+        sys.exit(f"{C['r']}no branch {branch} to merge{C['x']}")
+    sh(["git", "checkout", "main"], a.diss)
+    sh(["git", "pull", "--ff-only", "origin", "main"], a.diss, check=False)
+    sh(["git", "fetch", "origin", branch], a.diss, check=False)
+    m = subprocess.run(["git", "merge", "--no-ff", "-m", f"merge {branch}: reviewed RFAM-reviewer edits",
+                        f"origin/{branch}" if "origin" in (sh(["git","branch","-r"],a.diss,check=False) or "") else branch],
+                       cwd=a.diss, capture_output=True, text=True)
+    if m.returncode != 0:
+        subprocess.run(["git", "merge", "--abort"], cwd=a.diss, capture_output=True)
+        sys.exit(f"{C['r']}merge failed (conflict) — resolve by hand:\n{m.stderr.strip()[-400:]}{C['x']}")
+    p = subprocess.run(["git", "push", "origin", "main"], cwd=a.diss, capture_output=True, text=True)
+    if p.returncode != 0:
+        print(f"{C['y']}merged locally but push to main failed — retry `git -C '{a.diss}' push`.{C['x']}")
+    # regenerate this chapter's reading HTML from the new main and republish it
+    sh(["bash", "export/chapter-html.sh", ch], a.diss)
+    src = os.path.join(a.diss, "export", "build", f"{ch}.html")
+    if os.path.exists(src):
+        shutil.copy(src, os.path.join(a.data, "content", f"{ch}.html"))
+    # flip the chapter's staged/approved comments to merged
+    rp = review_path(a.data, ch); review = load(rp, None); n = 0
+    if review:
+        for c in review.get("comments", []):
+            if c.get("status") in ("staged", "approved"):
+                c["status"] = "merged"; c.setdefault("claude", {})["branch"] = branch; n += 1
+        dump(rp, review)
+    jobs = load(jobs_path(a.data), [])
+    for j in jobs:
+        if j.get("type") == "merge" and j.get("chapter") == ch and j.get("status") == "queued":
+            j["status"] = "done"; j["done_ts"] = now()
+    dump(jobs_path(a.data), jobs)
+    _push_data(a, f"merge {ch}: republish content, mark {n} comment(s) merged")
+    sh(["git", "push", "origin", "--delete", branch], a.diss, check=False)
+    sh(["git", "branch", "-D", branch], a.diss, check=False)
+    print(f"{C['g']}Merged {branch} -> main, republished {ch}, marked {n} comment(s) merged, deleted the branch.{C['x']}")
+    print(f"{C['dim']}Note: global search index not rebuilt (do a full make-search-index if a section's text changed materially).{C['x']}")
 
 
 def advisor_path(data, advisor, ch):
@@ -318,7 +370,8 @@ def main():
     sp = sub.add_parser("start", help="branch off main for a job"); sp.add_argument("job_id"); sp.set_defaults(fn=cmd_start)
     sp = sub.add_parser("stage", help="mark comments staged + job done"); sp.add_argument("job_id"); sp.add_argument("--force", action="store_true"); sp.set_defaults(fn=cmd_stage)
     sp = sub.add_parser("respond", help="answer a question-comment (status=answered)"); sp.add_argument("chapter"); sp.add_argument("comment_id"); sp.add_argument("text"); sp.set_defaults(fn=cmd_respond)
-    sp = sub.add_parser("note", help="attach an explanation to a comment, keep its status"); sp.add_argument("chapter"); sp.add_argument("comment_id"); sp.add_argument("text"); sp.set_defaults(fn=cmd_note)
+    sp = sub.add_parser("note", help="attach an explanation (+optional staged-edit diff) to a comment, keep its status"); sp.add_argument("chapter"); sp.add_argument("comment_id"); sp.add_argument("text"); sp.add_argument("--before", default=""); sp.add_argument("--after", default=""); sp.set_defaults(fn=cmd_note)
+    sp = sub.add_parser("merge", help="merge review-edits/<ch> -> main, republish, mark merged"); sp.add_argument("chapter"); sp.set_defaults(fn=cmd_merge)
     sp = sub.add_parser("done", help="mark any job done (e.g. after run-agents)"); sp.add_argument("job_id"); sp.set_defaults(fn=cmd_done)
     sub.add_parser("advisor-list", help="list advisor-submitted comments + resolutions").set_defaults(fn=cmd_advisor_list)
     sp = sub.add_parser("advisor-resolve", help="record how an advisor comment was addressed"); sp.add_argument("advisor"); sp.add_argument("chapter"); sp.add_argument("comment_id"); sp.add_argument("state", choices=["addressed","declined","noted"]); sp.add_argument("note"); sp.add_argument("--before", default=""); sp.add_argument("--after", default=""); sp.set_defaults(fn=cmd_advisor_resolve)

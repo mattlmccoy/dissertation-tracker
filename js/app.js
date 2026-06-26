@@ -30,7 +30,7 @@ let reviewSha = null, syncTimer = null, scrollSaveT = null;
 async function syncDown(){
   const t = tok(); if (!t) return;
   try { const { json, sha } = await getJson(t, reviewPath(current)); reviewSha = sha;
-    if (json){ review = mergeReview(review, json); save(); renderComments(); if (document.getElementById('doc')){ buildNav(); paintHighlights(); } } }
+    if (json){ review = mergeReview(review, json); save(); renderComments(); if (document.getElementById('doc')){ buildNav(); paintHighlights(); refreshStaged(); } } }
   catch(e){ /* offline / first time */ }
 }
 function syncUpSoon(){ if (!tok()) return; clearTimeout(syncTimer); syncTimer = setTimeout(syncUp, 1200); }
@@ -115,6 +115,7 @@ function renderDoc(fragment){
   linkCrossRefs(doc);
   buildNav();
   paintHighlights();
+  refreshStaged();
   restoreCursor();
   syncDown();
   loadAdvisorComments(current);
@@ -540,6 +541,71 @@ function wrapInNode(el, needle, c, advisor){
 function jumpToAdvisorCard(aid){
   const card = document.querySelector(`#comments .ccard.adv[data-aid="${aid}"]`);
   card?.scrollIntoView({ behavior:'smooth', block:'center' }); card?.classList.add('flash'); setTimeout(() => card?.classList.remove('flash'), 1500);
+}
+// ---------- staged edits: show the pending change in context (before merge) ----------
+function refreshStaged(){ const doc = document.getElementById('doc'); if (!doc) return; renderStagedEdits(doc); showApproveBar(); }
+function renderStagedEdits(doc){
+  doc.querySelectorAll('ins.tc-stage').forEach(n => n.remove());
+  doc.querySelectorAll('del.tc-stage').forEach(n => { const p = n.parentNode; n.replaceWith(...n.childNodes); p.normalize(); });
+  (review.comments||[]).forEach(c => {
+    const se = c.staged_edit; if (!se || !['staged','approved'].includes(c.status)) return;
+    const before = (se.before||'').replace(/\s+/g,' ').trim();
+    const after  = (se.after ||'').replace(/\s+/g,' ').trim();
+    if (!before) return;
+    const probe = before.slice(0, 30);
+    const blocks = [...doc.querySelectorAll('p, li, figcaption')];
+    const el = blocks.find(e => e.textContent.replace(/\s+/g,' ').includes(probe));
+    if (!el) return;
+    const tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); let node;
+    while ((node = tw.nextNode())){
+      const collapsed = node.nodeValue.replace(/\s+/g,' ');
+      const i = collapsed.indexOf(probe); if (i < 0) continue;
+      try {
+        // map the collapsed index back to a raw-node offset
+        const rawStart = mapCollapsedIndex(node.nodeValue, i);
+        const rawEnd = mapCollapsedIndex(node.nodeValue, i + before.length);
+        const r = document.createRange(); r.setStart(node, rawStart); r.setEnd(node, Math.min(node.nodeValue.length, rawEnd));
+        if (after.startsWith(before)){                 // pure append → keep before, insert the suffix
+          const ins = document.createElement('ins'); ins.className = 'tc-stage'; ins.textContent = after.slice(before.length);
+          r.collapse(false); r.insertNode(ins);
+        } else {                                        // replace before with del+ins
+          const del = document.createElement('del'); del.className = 'tc-stage';
+          const ins = document.createElement('ins'); ins.className = 'tc-stage'; ins.textContent = after ? ' ' + after : '';
+          r.surroundContents(del); del.after(ins);
+        }
+        return;
+      } catch(e){ /* spans nodes — fall back to card-only */ return; }
+    }
+  });
+}
+function mapCollapsedIndex(raw, collapsedIdx){            // index in whitespace-collapsed text → index in raw text
+  let ci = 0; for (let ri = 0; ri < raw.length; ri++){ if (ci === collapsedIdx) return ri;
+    const isWs = /\s/.test(raw[ri]); if (isWs){ while (ri+1 < raw.length && /\s/.test(raw[ri+1])) ri++; } ci++; }
+  return raw.length;
+}
+function showApproveBar(){
+  document.getElementById('approvebar')?.remove();
+  const staged = (review.comments||[]).filter(c => c.staged_edit && ['staged','approved'].includes(c.status));
+  if (!staged.length) return;
+  const allApproved = staged.every(c => c.status === 'approved');
+  const bar = document.createElement('div'); bar.id = 'approvebar'; bar.className = 'approvebar';
+  bar.innerHTML = `<i class="ti ti-git-pull-request"></i><span><b>${staged.length}</b> staged edit${staged.length>1?'s':''} in this chapter — shown inline as <span class="tc-legend"><del>old</del> <ins>new</ins></span>. Review, then merge to the dissertation.</span>
+    <button class="btn ${allApproved?'':'btn-primary'}" id="approve-btn" style="margin-left:auto" ${allApproved?'disabled':''}>${allApproved?'Merge requested ✓':'Approve & merge chapter'}</button>`;
+  read.prepend(bar);
+  bar.querySelector('#approve-btn').onclick = approveChapter;
+}
+async function approveChapter(){
+  const t = tok(); if (!t){ flash('Add your access token first.'); return; }
+  if (!confirm(`Approve all staged edits for Chapter ${chMeta(current).n} and merge them into the dissertation?`)) return;
+  flash('Requesting merge…');
+  try {
+    const { json, sha } = await getJson(t, 'jobs.json'); const jobs = Array.isArray(json) ? json : [];
+    jobs.push({ id:'j_'+Date.now().toString(36), type:'merge', chapter:current, status:'queued', requested_ts:new Date().toISOString() });
+    await putJson(t, 'jobs.json', jobs, sha, 'review: approve+merge '+current);
+    review.comments.forEach(c => { if (c.staged_edit && c.status==='staged') c.status = 'approved'; });
+    save(); await syncUp(); renderComments(); refreshStaged();
+    flash('Approved — queued for merge into the dissertation.');
+  } catch(e){ flash('Approve failed: '+e.message); }
 }
 function markFigure(doc, c){
   const figs = [...doc.querySelectorAll('figure')];
