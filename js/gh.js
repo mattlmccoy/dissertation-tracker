@@ -14,7 +14,10 @@ const hdr = tok => ({ Authorization:`Bearer ${tok}`, Accept:'application/vnd.git
 export async function getJson(tok, path){
   const r = await fetch(`${API}/repos/${OWNER}/${REPO}/contents/${path}`, { headers:hdr(tok) });
   if (r.status===404) return { json:null, sha:null };
-  const d = await r.json(); return { json: JSON.parse(decodeURIComponent(escape(atob(d.content)))), sha:d.sha };
+  if (!r.ok) throw new Error('GitHub '+r.status);
+  const d = await r.json();
+  const txt = decodeURIComponent(escape(atob((d.content||'').replace(/\s/g,''))));   // strip GitHub's base64 newlines (atob is strict on some mobile browsers)
+  return { json: JSON.parse(txt), sha:d.sha };
 }
 export async function putJson(tok, path, obj, sha, msg){
   const content = btoa(unescape(encodeURIComponent(JSON.stringify(obj,null,2))));

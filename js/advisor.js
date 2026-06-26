@@ -15,7 +15,7 @@ const deleteComment = (r, id) => ({ ...r, comments:r.comments.filter(c => c.id!=
 // --- data-repo I/O (self-contained) ---
 const _API='https://api.github.com', _OWNER='mattlmccoy', _REPO='dissertation-tracker-data';
 const _hdr = t => ({ Authorization:`Bearer ${t}`, Accept:'application/vnd.github+json' });
-async function getJson(t, path){ const r=await fetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${path}`,{headers:_hdr(t)}); if(r.status===404) return {json:null,sha:null}; const d=await r.json(); return {json:JSON.parse(decodeURIComponent(escape(atob(d.content)))),sha:d.sha}; }
+async function getJson(t, path){ const r=await fetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${path}`,{headers:_hdr(t)}); if(r.status===404) return {json:null,sha:null}; if(!r.ok) throw new Error('GitHub '+r.status); const d=await r.json(); return {json:JSON.parse(decodeURIComponent(escape(atob((d.content||'').replace(/\s/g,''))))),sha:d.sha}; }
 async function putJson(t, path, obj, sha, msg){ const content=btoa(unescape(encodeURIComponent(JSON.stringify(obj,null,2)))); const r=await fetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${path}`,{method:'PUT',headers:_hdr(t),body:JSON.stringify({message:msg,content,sha:sha||undefined})}); if(!r.ok) throw new Error('put failed: '+r.status); return (await r.json()).content.sha; }
 
 const ADVISOR = window.ADVISOR || { id: '?', name: 'Reviewer' };
