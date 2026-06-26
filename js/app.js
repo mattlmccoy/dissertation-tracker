@@ -209,6 +209,29 @@ function wireFigures(doc){
       showPopover(pending, rects, 'figure', fig);
     });
   });
+  // tables and display equations are commentable too (no drawing — they carry no raster image)
+  doc.querySelectorAll('table, .katex-display').forEach(el => {
+    if (el.dataset.blkWired) return;
+    if (el.closest('figure')?.dataset.figWired) return;   // already handled by its figure
+    el.dataset.blkWired = '1'; el.classList.add('blk-commentable');
+    el.addEventListener('click', e => {
+      if (window.getSelection().toString().trim()) return;
+      e.stopPropagation(); document.getElementById('pop')?.remove();
+      const isTable = el.tagName === 'TABLE';
+      let label = '', quote = '';
+      if (isTable){
+        const cap = el.querySelector('caption')?.textContent.trim() || el.closest('figure')?.querySelector('figcaption')?.textContent.trim() || '';
+        const m = cap.match(/^\s*Table\s+[\d.]+/i); label = m ? m[0].trim() : 'Table'; quote = cap.slice(0,150) || 'Table';
+      } else {
+        const num = (el.querySelector('.tag, .eqn-num')?.textContent || '').replace(/[()]/g,'').trim();
+        label = num ? `Equation (${num})` : 'Equation'; quote = (el.textContent||'').replace(/\s+/g,' ').trim().slice(0,120) || 'Equation';
+      }
+      const rr = read.getBoundingClientRect(), fr = el.getBoundingClientRect();
+      const rects = [{ x:fr.x-rr.x, y:fr.y-rr.y+read.scrollTop, w:fr.width, h:fr.height }];
+      pending = { quote: label ? `${label}: ${quote}` : quote, kind:'figure', figure:label, section: headingFor(el), confirmed:true, rects:[] };
+      showPopover(pending, rects, isTable ? 'figure' : 'claim');   // no figEl → no Draw button
+    });
+  });
 }
 // siunitx unit/prefix macros KaTeX doesn't know — expand to upright text so e.g. 119\,n\henry → 119 nH.
 // Names that collide with real KaTeX macros (\bar accent, \square symbol) are deliberately excluded.
