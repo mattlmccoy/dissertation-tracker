@@ -48,7 +48,7 @@ const chMeta = id => CHAPTERS.find(c => c.id === id) || (id === '__outline__' ? 
 const TAGS = ['suggestion','wording','question','clarity','citation'];
 const shortTitle = t => { const s = t.split(':')[0].trim(); return s.length <= 34 ? s : s.slice(0,34).replace(/\s\S*$/,'') + '…'; };
 const escapeHtml = s => (s||'').replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
-const fmtDate = ts => { if(!ts) return ''; const d=new Date(ts); if(isNaN(d)) return ''; const days=Math.floor((Date.now()-d.getTime())/86400000); if(days<=0) return 'today'; if(days===1) return 'yesterday'; if(days<7) return days+'d ago'; return d.toLocaleDateString(undefined,{month:'short',day:'numeric'}); };
+const fmtDate = ts => { if(!ts) return ''; const d=new Date(ts); if(isNaN(d)) return ''; return d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); };
 
 const read = document.getElementById('read');
 let current = null, review = null, released = [], responsesReleased = false;

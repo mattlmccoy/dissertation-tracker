@@ -818,7 +818,7 @@ function markFigure(doc, c){
   if (fig){ fig.classList.add('cmark-fig'); fig.dataset.cid = c.id; fig.style.setProperty('--mk', `var(--${c.tag})`); }
 }
 const escapeHtml = s => (s||'').replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
-const fmtDate = ts => { if(!ts) return ''; const d=new Date(ts); if(isNaN(d)) return ''; const days=Math.floor((Date.now()-d.getTime())/86400000); if(days<=0) return 'today'; if(days===1) return 'yesterday'; if(days<7) return days+'d ago'; return d.toLocaleDateString(undefined,{month:'short',day:'numeric'}); };
+const fmtDate = ts => { if(!ts) return ''; const d=new Date(ts); if(isNaN(d)) return ''; return d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); };
 function suggHtml(c){
   if (!c.edit) return '';
   const e = c.edit, find = escapeHtml((e.find||'').slice(0,140)), repl = escapeHtml((e.replacement||'').slice(0,240));
