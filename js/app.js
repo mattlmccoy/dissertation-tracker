@@ -1313,7 +1313,7 @@ async function openReleasePanel(){
   }).join('');
   document.getElementById('rel-body').innerHTML = `
     <div class="rel-sec">Which chapters each advisor can see</div>
-    <table class="rel-tbl"><thead><tr><th>Chapter</th>${advs.map(a => `<th>${escapeHtml(a)}<div style="font-weight:400;font-size:10px;color:var(--text-3)">${escapeHtml(rel[a].name||a)}</div></th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>
+    <table class="rel-tbl"><thead><tr><th>Chapter</th>${advs.map(a => `<th>${escapeHtml(a)}<div style="font-weight:400;font-size:10px;color:var(--text-3)">${escapeHtml(rel[a].name||a)}</div></th>`).join('')}</tr></thead><tbody>${rows}<tr style="border-top:2px solid var(--border-2)"><td>Release responses<div style="font-weight:400;font-size:10px;color:var(--text-3)">let them see how you addressed their comments</div></td>${advs.map(a => `<td style="text-align:center"><input type="checkbox" data-resp="${a}" ${rel[a].responses_released?'checked':''}></td>`).join('')}</tr></tbody></table>
     <div style="display:flex;gap:8px;margin:14px 0 6px;align-items:center"><button class="btn btn-primary" id="rel-save">Save &amp; publish</button><span id="rel-stat" style="font-size:12px;color:var(--text-3)"></span></div>
     <div class="rel-links">${advs.map(a => `<div><b>${escapeHtml(rel[a].name||a)}</b> → <code>${escapeHtml(base + (a==='general'?'review-lab.html':a+'.html'))}</code></div>`).join('')}</div>
     <div class="rel-sec" style="margin-top:26px">Comments received from advisors</div>${inboxHtml}`;
@@ -1332,7 +1332,8 @@ async function openReleasePanel(){
     };
   });
   document.getElementById('rel-save').onclick = async () => {
-    advs.forEach(a => { rel[a].released = [...document.querySelectorAll(`input[data-a="${a}"]:checked`)].map(x => x.dataset.ch); });
+    advs.forEach(a => { rel[a].released = [...document.querySelectorAll(`input[data-a="${a}"]:checked`)].map(x => x.dataset.ch);
+      rel[a].responses_released = !!document.querySelector(`input[data-resp="${a}"]`)?.checked; });
     const stat = document.getElementById('rel-stat'); stat.textContent = 'Publishing…';
     try { sha = await putJson(t, 'release.json', rel, sha, 'release: update advisor chapter gate'); stat.textContent = 'Published ✓'; }
     catch(e){ stat.textContent = 'Failed: ' + e.message; }

@@ -151,6 +151,12 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;pad
 /* focus mode */
 body.focusmode .nav,body.focusmode .comments{display:none!important}
 body.focusmode #doc{max-width:760px}
+/* responses-to-your-comments summary */
+.resp-wrap{max-width:760px;margin:0 auto;padding:30px 26px 90px}
+.resp-ch{font-size:12px;font-weight:600;color:var(--text-2);letter-spacing:.03em;margin:24px 0 10px;padding-bottom:5px;border-bottom:1px solid var(--border)}
+.resp-item{border:.5px solid var(--border);border-radius:var(--r-md);padding:12px 14px;margin-bottom:10px}
+.resp-q{font-size:12px;color:var(--text-3);font-style:italic}
+.resp-b{font-size:13.5px;color:var(--text);margin:3px 0 4px}
 /* proposed outline */
 .ol-wrap{max-width:760px;margin:0 auto;padding:30px 26px 90px}
 .ol-h1{font-size:24px;font-weight:600;margin:0 0 8px}

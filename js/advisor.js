@@ -50,7 +50,7 @@ const shortTitle = t => { const s = t.split(':')[0].trim(); return s.length <= 3
 const escapeHtml = s => (s||'').replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
 
 const read = document.getElementById('read');
-let current = null, review = null, released = [];
+let current = null, review = null, released = [], responsesReleased = false;
 const tok = () => localStorage.getItem('ghpat');
 let keyBad = false;
 const is401 = e => /\b401\b/.test((e && e.message) || '');
@@ -93,7 +93,7 @@ async function loadRelease(){
   try { const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/release.json?t=${Date.now()}`,{ headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' });
     if (r.status === 401){ keyBad = true; return; }
     if (r.ok) apply(await r.json()); } catch(e){ released = []; }
-  function apply(j){ released = (j?.[RELEASE_ID]?.released) || []; }
+  function apply(j){ released = (j?.[RELEASE_ID]?.released) || []; responsesReleased = !!(j?.[RELEASE_ID]?.responses_released); }
 }
 async function loadChapter(ch){
   current = ch; review = loadLocal(ch);
@@ -379,10 +379,49 @@ function enterHome(){
         <div style="min-width:0"><div style="font-size:14px;font-weight:500">Proposed dissertation outline</div>
         <div style="font-size:11.5px;color:var(--text-2)">See the planned structure and comment on it — available before chapters are released.</div></div>
         <span style="margin-left:auto;font-size:11.5px;color:var(--text-2);white-space:nowrap">${ocn?ocn+' comment'+(ocn>1?'s':''):'open to review'} <i class="ti ti-chevron-right" style="vertical-align:-2px"></i></span></button>
+      ${responsesReleased ? `<button id="responses-card" style="display:flex;align-items:center;gap:13px;width:100%;text-align:left;border:.5px solid var(--success);border-radius:var(--r-lg);padding:14px 16px;margin-bottom:26px;background:var(--success-bg);cursor:pointer;font:inherit;color:var(--text)">
+        <i class="ti ti-message-check" style="font-size:22px;color:var(--success)"></i>
+        <div style="min-width:0"><div style="font-size:14px;font-weight:500">Responses to your comments</div>
+        <div style="font-size:11.5px;color:var(--text-2)">See how the author addressed each comment you submitted.</div></div>
+        <span style="margin-left:auto;color:var(--text-2)"><i class="ti ti-chevron-right" style="vertical-align:-2px"></i></span></button>` : ''}
       <div style="font-size:11px;letter-spacing:.06em;color:var(--text-3);margin-bottom:13px">CHAPTERS FOR REVIEW</div>
       ${list.length?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px">${cards}</div>`:`<div class="empty">No chapters have been released for your review yet. You'll see them here once they're shared.</div>`}</div>`;
   read.querySelectorAll('[data-ch]').forEach(el=>el.onclick=()=>loadChapter(el.dataset.ch));
   document.getElementById('outline-card').onclick=loadOutline;
+  document.getElementById('responses-card')?.addEventListener('click', loadResponses);
+}
+// ---------- responses to your comments (read-only; gated by the owner's release toggle) ----------
+async function loadResponses(){
+  document.getElementById('nav').style.display='none'; document.getElementById('comments').style.display='none';
+  document.getElementById('topbar').innerHTML=`<button class="icbtn" id="resp-back" title="All chapters"><i class="ti ti-layout-grid"></i></button>
+    <strong style="font-size:15px;font-weight:600;margin-left:4px">Responses to your comments</strong>`;
+  document.getElementById('resp-back').onclick=enterHome;
+  read.innerHTML=`<div class="empty"><i class="ti ti-loader-2" style="font-size:22px"></i><div style="margin-top:8px">Loading…</div></div>`;
+  const t=tok(); const dev=location.hostname==='localhost'||location.hostname==='127.0.0.1';
+  const chs=[...released,'__outline__'];
+  const groups=[];
+  for(const ch of chs){
+    let json=null;
+    try{
+      if(dev){ const r=await fetch(`./advisor/${effId()}/${ch}.json`); if(r.ok) json=await r.json(); }
+      else if(t){ const r=await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/advisor/${effId()}/${ch}.json?t=${Date.now()}`,{headers:{Authorization:`Bearer ${t}`,Accept:'application/vnd.github.raw'},cache:'no-store'}); if(r.status===401) return showKeyExpired(); if(r.ok) json=await r.json(); }
+    }catch(e){}
+    const cs=(json?.comments||[]).filter(c=>c.status==='submitted');
+    if(cs.length) groups.push({ch, comments:cs});
+  }
+  renderResponses(groups);
+}
+function renderResponses(groups){
+  if(!groups.length){ read.innerHTML=`<div class="empty">No submitted comments yet. Once you submit comments and the author responds, they'll appear here.</div>`; return; }
+  const sections=groups.map(g=>{
+    const items=g.comments.map(c=>`<div class="resp-item">
+        <div class="resp-q">"${escapeHtml((c.anchor?.quote||'').slice(0,90))}"</div>
+        <div class="resp-b">${escapeHtml(c.body||'')}</div>${suggHtml(c)}
+        ${c.resolution?resolHtml(c):`<div class="resol resol-noted"><div class="resol-h"><i class="ti ti-clock"></i>Awaiting response</div></div>`}</div>`).join('');
+    return `<div class="resp-sec"><div class="resp-ch">Chapter ${chMeta(g.ch).n} · ${escapeHtml(shortTitle(chMeta(g.ch).title))}</div>${items}</div>`;
+  }).join('');
+  read.innerHTML=`<div class="resp-wrap"><h1 class="ol-h1">Responses to your comments</h1>
+    <p class="ol-intro">How the author addressed each comment you submitted. This is read-only.</p>${sections}</div>`;
 }
 // ---------- proposed outline (available before chapters are released) ----------
 async function loadOutline(){
