@@ -567,7 +567,7 @@ function buildCommentCard(c){
           <button class="icbtn cact" data-act="edit" title="Edit" style="width:25px;height:25px;font-size:14px"><i class="ti ti-pencil"></i></button>
           <button class="icbtn cact" data-act="del" title="Delete" style="width:25px;height:25px;font-size:14px"><i class="ti ti-trash"></i></button></span>
         <span class="status" style="background:${stBg};color:${stColor};${st==='open'?'display:none':''}">${st}</span></div>
-      <div class="snip">"${escapeHtml((c.anchor.quote||'').slice(0,52))}"</div>
+      <div class="snip">"${escapeHtml((c.anchor.quote||'').slice(0,52))}"${c.created_ts?`<span class="cmeta"> · ${fmtDate(c.created_ts)}</span>`:''}</div>
       <div class="body" style="${st==='resolved'?'opacity:.5;text-decoration:line-through':''}">${escapeHtml(c.body)}</div>
       ${c.markup ? `<div class="cmarkup" data-path="${escapeHtml(c.markup.path)}" title="Your markup"><img alt="figure markup"></div>` : ''}
       ${suggHtml(c)}
@@ -619,7 +619,7 @@ function renderAdvisorSection(pane){
         <span class="chip advchip"><i class="ti ti-user" style="font-size:11px;margin-right:3px"></i>${escapeHtml(whoLabel(c))}</span>
         ${c.tag&&c.tag!=='other'?`<span class="chip" style="margin-left:5px">${c.kind==='suggestion'?'<i class="ti ti-pencil" style="font-size:10px;margin-right:2px"></i>':''}${escapeHtml(c.tag)}</span>`:''}
         ${c.status==='submitted'?'<span class="status" style="margin-left:auto;background:var(--success-bg);color:var(--success)">submitted</span>':''}</div>
-      <div class="snip">"${escapeHtml((c.anchor?.quote||'').slice(0,52))}"</div>
+      <div class="snip">"${escapeHtml((c.anchor?.quote||'').slice(0,52))}"${c.created_ts?`<span class="cmeta"> · ${fmtDate(c.created_ts)}</span>`:''}</div>
       <div class="body">${escapeHtml(c.body)}</div>${suggHtml(c)}${resolHtml(c)}${fupHtml(c)}
       <div class="advacts"><button class="btn aj" style="padding:3px 9px;font-size:11.5px"><i class="ti ti-arrow-right"></i>Jump</button><button class="btn ar" style="padding:3px 9px;font-size:11.5px"><i class="ti ti-message-check"></i>${c.resolution?'Update reply':'Mark addressed'}</button></div>
       <div class="rform" style="display:none">
@@ -819,6 +819,7 @@ function markFigure(doc, c){
   if (fig){ fig.classList.add('cmark-fig'); fig.dataset.cid = c.id; fig.style.setProperty('--mk', `var(--${c.tag})`); }
 }
 const escapeHtml = s => (s||'').replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
+const fmtDate = ts => { if(!ts) return ''; const d=new Date(ts); if(isNaN(d)) return ''; const days=Math.floor((Date.now()-d.getTime())/86400000); if(days<=0) return 'today'; if(days===1) return 'yesterday'; if(days<7) return days+'d ago'; return d.toLocaleDateString(undefined,{month:'short',day:'numeric'}); };
 function suggHtml(c){
   if (!c.edit) return '';
   const e = c.edit, find = escapeHtml((e.find||'').slice(0,140)), repl = escapeHtml((e.replacement||'').slice(0,240));
@@ -1302,7 +1303,7 @@ async function openReleasePanel(){
     const items = inbox[a]||[];
     return `<div class="rel-inbox"><div class="rel-inbox-h"><b>${escapeHtml(idLabel(a))}</b>${/^general-/.test(a)?'<span class="chip" style="margin-left:5px">lab</span>':''}<span class="chip" style="background:var(--accent-bg);color:var(--accent)">${items.length} comment${items.length!==1?'s':''}</span></div>${
       items.length ? items.map(({chapter, c}) => `<div class="rel-cmt" data-ch="${chapter}" data-a="${a}" data-cid="${c.id}" data-q="${escapeHtml((c.anchor?.quote||'').slice(0,60))}">
-          <div class="rel-cmt-h">${escapeHtml(chMeta(chapter).n+'')}. ${escapeHtml(shortTitle(chMeta(chapter).title))} · ${escapeHtml(c.anchor?.section||'')} ${c.status==='submitted'?'<span class="chip" style="background:var(--success-bg);color:var(--success);margin-left:6px">submitted</span>':c.status==='resolved'?'<span class="chip" style="margin-left:6px">withdrawn</span>':''}</div>
+          <div class="rel-cmt-h">${escapeHtml(chMeta(chapter).n+'')}. ${escapeHtml(shortTitle(chMeta(chapter).title))} · ${escapeHtml(c.anchor?.section||'')}${c.created_ts?` · <span style="color:var(--text-3)">${fmtDate(c.created_ts)}</span>`:''} ${c.status==='submitted'?'<span class="chip" style="background:var(--success-bg);color:var(--success);margin-left:6px">submitted</span>':c.status==='resolved'?'<span class="chip" style="margin-left:6px">withdrawn</span>':''}${c.reopened?'<span class="chip" style="background:var(--warn-bg);color:var(--warn);margin-left:6px">re-opened</span>':''}</div>
           <div class="rel-cmt-q">"${escapeHtml((c.anchor?.quote||'').slice(0,90))}"</div>
           <div class="rel-cmt-b">${escapeHtml(c.body||'')}</div>${c.edit?`<div class="sugg"><div class="op"><i class="ti ti-pencil"></i>Suggested ${c.edit.op}</div>${c.edit.op==='delete'?`<del>${escapeHtml(c.edit.find||'')}</del>`:`<del>${escapeHtml(c.edit.find||'')}</del> <ins>${escapeHtml(c.edit.replacement||'')}</ins>`}</div>`:''}
           ${resolHtml(c)}${fupHtml(c)}

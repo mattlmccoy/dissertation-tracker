@@ -48,6 +48,7 @@ const chMeta = id => CHAPTERS.find(c => c.id === id) || (id === '__outline__' ? 
 const TAGS = ['suggestion','wording','question','clarity','citation'];
 const shortTitle = t => { const s = t.split(':')[0].trim(); return s.length <= 34 ? s : s.slice(0,34).replace(/\s\S*$/,'') + '…'; };
 const escapeHtml = s => (s||'').replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
+const fmtDate = ts => { if(!ts) return ''; const d=new Date(ts); if(isNaN(d)) return ''; const days=Math.floor((Date.now()-d.getTime())/86400000); if(days<=0) return 'today'; if(days===1) return 'yesterday'; if(days<7) return days+'d ago'; return d.toLocaleDateString(undefined,{month:'short',day:'numeric'}); };
 
 const read = document.getElementById('read');
 let current = null, review = null, released = [], responsesReleased = false;
@@ -294,7 +295,7 @@ function renderComments(){
           <button class="icbtn cact" data-act="edit" title="Edit" style="width:25px;height:25px;font-size:14px"><i class="ti ti-pencil"></i></button>
           <button class="icbtn cact" data-act="del" title="Delete" style="width:25px;height:25px;font-size:14px"><i class="ti ti-trash"></i></button></span>
         ${stBadge}</div>
-      <div class="snip">"${escapeHtml((c.anchor.quote||'').slice(0,52))}"</div><div class="body" style="${resolved?'opacity:.5;text-decoration:line-through':''}">${escapeHtml(c.body)}</div>${suggHtml(c)}${resolHtml(c)}`;
+      <div class="snip">"${escapeHtml((c.anchor.quote||'').slice(0,52))}"${c.created_ts?`<span class="cmeta"> · ${fmtDate(c.created_ts)}</span>`:''}</div><div class="body" style="${resolved?'opacity:.5;text-decoration:line-through':''}">${escapeHtml(c.body)}</div>${suggHtml(c)}${resolHtml(c)}`;
     if(c.id===activeId) card.classList.add('active');
     card.onmouseenter=()=>{ card.querySelector('.cactions').style.display='flex'; const s=card.querySelector('.status'); if(s&&s.textContent) s.style.visibility='hidden'; document.querySelector(`#doc .cmark[data-id="${c.id}"]`)?.classList.add('cmark-hot'); };
     card.onmouseleave=()=>{ card.querySelector('.cactions').style.display='none'; const s=card.querySelector('.status'); if(s) s.style.visibility=''; document.querySelector(`#doc .cmark[data-id="${c.id}"]`)?.classList.remove('cmark-hot'); };
@@ -416,30 +417,52 @@ async function loadResponses(){
 }
 let pendingJump = null;          // a quote to scroll to + flash after the next chapter render
 const _respFigCache = {};        // ch -> published HTML (so we extract figures without refetching)
+let _respGroups = [];            // retained so triage actions can re-render
+let _respResolvedOpen = false;
+function _findRespComment(cid){ for(const g of _respGroups){ const c=(g.comments||[]).find(x=>x.id===cid); if(c) return c; } return null; }
 function renderResponses(groups){
+  _respGroups = groups;
   if(!groups.length){ read.innerHTML=`<div class="empty">Nothing here yet. Once you've submitted comments and the author has replied, you'll see their replies here.</div>`; return; }
   const item=(c,ch)=>{
-    const fups=(c.followups||[]).map(f=>`<div class="resp-fup"><span class="resp-fup-h">You · ${(f.ts||'').slice(0,10)}</span>${escapeHtml(f.text)}</div>`).join('');
-    return `<div class="resp-item" data-cid="${escapeHtml(c.id)}" data-ch="${escapeHtml(ch)}" data-q="${escapeHtml((c.anchor?.quote||'').slice(0,60))}" data-fig="${c.kind==='figure'?'1':''}">
-        <div class="resp-q">"${escapeHtml((c.anchor?.quote||'').slice(0,90))}"</div>
+    const st=c.advisor_state;
+    const fups=(c.followups||[]).map(f=>`<div class="resp-fup"><span class="resp-fup-h">You · ${fmtDate(f.ts)}</span>${escapeHtml(f.text)}</div>`).join('');
+    return `<div class="resp-item${st==='flagged'?' resp-flagged':''}" data-cid="${escapeHtml(c.id)}" data-ch="${escapeHtml(ch)}" data-q="${escapeHtml((c.anchor?.quote||'').slice(0,60))}" data-fig="${c.kind==='figure'?'1':''}">
+        <div class="resp-top"><div class="resp-q">"${escapeHtml((c.anchor?.quote||'').slice(0,90))}"</div><span class="resp-time">${fmtDate(c.created_ts)}</span></div>
+        ${st==='flagged'?`<div class="resp-flag-tag"><i class="ti ti-flag"></i>Flagged for later</div>`:''}
         <div class="resp-b">${escapeHtml(c.body||'')}</div>${suggHtml(c)}
         ${c.resolution?resolHtml(c):`<div class="resol resol-noted"><div class="resol-h"><i class="ti ti-clock"></i>Awaiting reply</div></div>`}
         ${c.kind==='figure'?`<div class="resp-fig"></div>`:''}${fups}
-        <div class="resp-acts">${ch!=='__outline__'?`<button class="btn resp-context"><i class="ti ti-arrow-right"></i>See in context</button>`:''}<button class="btn resp-reply"><i class="ti ti-message"></i>Reply</button></div>
+        <div class="resp-acts">${ch!=='__outline__'?`<button class="btn resp-context"><i class="ti ti-arrow-right"></i>See in context</button>`:''}<button class="btn resp-reply"><i class="ti ti-message"></i>Reply</button>
+          <button class="btn resp-flag">${st==='flagged'?'<i class="ti ti-flag-off"></i>Unflag':'<i class="ti ti-flag"></i>Flag for later'}</button>
+          <button class="btn resp-resolve">${st==='resolved'?'<i class="ti ti-rotate-clockwise"></i>Reopen':'<i class="ti ti-check"></i>Mark resolved'}</button></div>
         <div class="resp-replybox" style="display:none"><textarea rows="2" placeholder="If this wasn't fully addressed, add a note for the author…"></textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="btn btn-primary resp-send">Send reply</button><button class="btn resp-cancel">Cancel</button></div></div>
       </div>`;
   };
   const head=g=>g.ch==='__outline__'?'Proposed outline':`Chapter ${chMeta(g.ch).n} · ${escapeHtml(shortTitle(chMeta(g.ch).title))}`;
-  const sections=groups.map(g=>`<div class="resp-sec"><div class="resp-ch">${head(g)}</div>${g.comments.map(c=>item(c,g.ch)).join('')}</div>`).join('');
-  read.innerHTML=`<div class="resp-wrap"><h1 class="ol-h1">Responses to your comments</h1>${sections}</div>`;
+  const activeSecs=groups.map(g=>{ const cs=(g.comments||[]).filter(c=>c.advisor_state!=='resolved'); return cs.length?`<div class="resp-sec"><div class="resp-ch">${head(g)}</div>${cs.map(c=>item(c,g.ch)).join('')}</div>`:''; }).join('');
+  const resolved=groups.flatMap(g=>(g.comments||[]).filter(c=>c.advisor_state==='resolved').map(c=>({c,ch:g.ch})));
+  const resolvedHtml=resolved.length?`<div class="resp-resolved-grp"><button class="resp-resolved-head"><i class="ti ti-chevron-${_respResolvedOpen?'down':'right'}"></i><span>Resolved</span><span class="rcount">${resolved.length}</span></button><div class="resp-resolved-body" style="display:${_respResolvedOpen?'block':'none'}">${resolved.map(r=>item(r.c,r.ch)).join('')}</div></div>`:'';
+  read.innerHTML=`<div class="resp-wrap"><h1 class="ol-h1">Responses to your comments</h1>${activeSecs||`<div class="empty" style="margin:8vh auto">You've cleared all your open responses${resolved.length?' — see Resolved below':''}.</div>`}${resolvedHtml}</div>`;
   read.querySelectorAll('.resp-item').forEach(el=>{
-    el.querySelector('.resp-context')?.addEventListener('click',()=>seeInContext(el.dataset.ch, el.dataset.q));
+    const cid=el.dataset.cid, ch=el.dataset.ch;
+    el.querySelector('.resp-context')?.addEventListener('click',()=>seeInContext(ch, el.dataset.q));
     const rb=el.querySelector('.resp-replybox');
     el.querySelector('.resp-reply').addEventListener('click',()=>{ rb.style.display=rb.style.display==='none'?'block':'none'; if(rb.style.display==='block') rb.querySelector('textarea').focus(); });
     el.querySelector('.resp-cancel').addEventListener('click',()=>{ rb.style.display='none'; });
-    el.querySelector('.resp-send').addEventListener('click',()=>replyToResponse(el.dataset.cid, el.dataset.ch, rb));
+    el.querySelector('.resp-send').addEventListener('click',()=>replyToResponse(cid, ch, rb));
+    el.querySelector('.resp-flag').addEventListener('click',()=>setAdvisorState(cid, ch, _findRespComment(cid)?.advisor_state==='flagged'?null:'flagged'));
+    el.querySelector('.resp-resolve').addEventListener('click',()=>setAdvisorState(cid, ch, _findRespComment(cid)?.advisor_state==='resolved'?null:'resolved'));
   });
+  const rh=read.querySelector('.resp-resolved-head'); if(rh) rh.onclick=()=>{ _respResolvedOpen=!_respResolvedOpen; renderResponses(_respGroups); };
   embedChangedFigures(groups);
+}
+async function setAdvisorState(cid, ch, state){
+  const c=_findRespComment(cid); if(c){ if(state) c.advisor_state=state; else delete c.advisor_state; }
+  renderResponses(_respGroups);
+  const t=tok(); if(!t) return;
+  try{ const path=`advisor/${effId()}/${ch}.json`; const { json, sha }=await getJson(t, path);
+    const tc=(json?.comments||[]).find(x=>x.id===cid); if(tc){ if(state) tc.advisor_state=state; else delete tc.advisor_state; await putJson(t, path, json, sha, `triage(${effId()}): ${ch} ${cid} ${state||'open'}`); }
+  }catch(e){ flash('Saved here; sync failed: '+e.message); }
 }
 function seeInContext(ch, q){
   if(ch==='__outline__'){ loadOutline(); return; }
