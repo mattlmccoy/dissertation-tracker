@@ -1416,12 +1416,17 @@ function resolHtml(c){
 // write a resolution into an advisor's comment file so it appears on their portal
 // mutate one advisor comment in advisor/<id>/<ch>.json (fetch -> apply -> push)
 async function _mutateAdvisorComment(advisorId, ch, cid, fn, msg){
-  const t = tok();
-  const { json, sha } = await getJson(t, `advisor/${advisorId}/${ch}.json`);
-  if (!json) throw new Error('advisor file not found');
-  const c = (json.comments||[]).find(x => x.id === cid); if (!c) throw new Error('comment not found');
-  fn(c);
-  await putJson(t, `advisor/${advisorId}/${ch}.json`, json, sha, msg);
+  const t = tok(); const path = `advisor/${advisorId}/${ch}.json`;
+  // read-modify-write with conflict retry: re-fetch + re-apply on 409 so concurrent
+  // edits to the SAME file (e.g. two comments in one chapter) don't clobber each other.
+  for (let attempt = 0; attempt < 5; attempt++){
+    const { json, sha } = await getJson(t, path);
+    if (!json) throw new Error('advisor file not found');
+    const c = (json.comments||[]).find(x => x.id === cid); if (!c) throw new Error('comment not found');
+    fn(c);
+    try { await putJson(t, path, json, sha, msg, false); return; }
+    catch(e){ if (String(e.message).includes('409') && attempt < 4){ await new Promise(r => setTimeout(r, 250*(attempt+1))); continue; } throw e; }
+  }
 }
 async function recordResolution(advisorId, ch, cid, resolution){
   await _mutateAdvisorComment(advisorId, ch, cid, c => { c.resolution = resolution; c.read = true; }, `resolution: ${advisorId} ${ch} ${cid}`);
