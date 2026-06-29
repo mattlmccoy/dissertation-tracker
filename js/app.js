@@ -1,4 +1,4 @@
-import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision } from './model.js';
+import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js';
 import { anchorFromSelection } from './anchor.js';
 import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl } from './gh.js';
 
@@ -541,9 +541,18 @@ function renderComments(){
   const list = filteredComments();
   if (!list.length){ pane.appendChild(Object.assign(document.createElement('div'), { className:'cempty', textContent:'No comments match this filter.' })); return; }
   const fold = cFilter.status === 'all';                       // only fold when not explicitly filtering by status
-  const active = fold ? list.filter(c => !RESOLVED_STATES.has(c.status)) : list;
-  const resolved = fold ? list.filter(c => RESOLVED_STATES.has(c.status)) : [];
+  const queued    = fold ? list.filter(c => c.status === 'approved') : [];
+  const active    = fold ? list.filter(c => !RESOLVED_STATES.has(c.status) && c.status !== 'approved') : list;
+  const resolved  = fold ? list.filter(c => RESOLVED_STATES.has(c.status)) : [];
   active.forEach(c => pane.appendChild(buildCommentCard(c)));
+  if (queued.length){
+    const grp = document.createElement('div'); grp.className = 'cqd-grp';
+    const head = document.createElement('div'); head.className = 'cqd-head';
+    head.innerHTML = `<i class="ti ti-clock-check"></i><span>Queued for merge</span><span class="rcount">${queued.length}</span>`;
+    grp.appendChild(head);
+    queued.forEach(c => grp.appendChild(buildCommentCard(c)));
+    pane.appendChild(grp);
+  }
   if (resolved.length){
     const grp = document.createElement('div'); grp.className = 'resolved-grp';
     const head = document.createElement('button'); head.className = 'resolved-head';
@@ -573,11 +582,12 @@ function buildCommentCard(c){
       <div class="body" style="${st==='resolved'?'opacity:.5;text-decoration:line-through':''}">${escapeHtml(c.body)}</div>
       ${c.markup ? `<div class="cmarkup" data-path="${escapeHtml(c.markup.path)}" title="Your markup"><img alt="figure markup"></div>` : ''}
       ${suggHtml(c)}
-      ${['staged','approved'].includes(c.status) ? `<div class="cdec" data-id="${c.id}">
+      ${c.status === 'staged' ? `<div class="cdec" data-id="${c.id}">
         <button class="btn cdec-b ${c.decision==='approve'?'on-approve':''}" data-d="approve"><i class="ti ti-check"></i>Approve</button>
         <button class="btn cdec-b ${c.decision==='reject'?'on-reject':''}" data-d="reject"><i class="ti ti-x"></i>Reject</button>
         <button class="btn cdec-b ${c.decision==='revise'?'on-revise':''}" data-d="revise"><i class="ti ti-pencil"></i>Request changes</button>
       </div>` : ''}
+      ${c.status === 'approved' ? `<div class="cdec" data-id="${c.id}"><span class="cqd"><i class="ti ti-clock-check"></i>queued for merge</span><button class="btn cunq" data-id="${c.id}"><i class="ti ti-arrow-back-up"></i>Unqueue</button></div>` : ''}
       ${c.claude?.response ? `<div class="cresp"><div class="cresp-h"><i class="ti ti-robot-face"></i>Claude</div>${escapeHtml(c.claude.response)}</div>` : ''}
       ${c.claude?.branch ? `<div class="branch"><i class="ti ti-git-branch"></i>${escapeHtml(c.claude.branch)}</div>` : ''}
       ${(c.thread||[]).map(m => `<div class="cmsg ${m.author==='you'?'me':'cl'}"><span class="cmsg-h">${m.author==='you'?'You':'Claude'} · ${(m.ts||'').slice(0,10)}</span>${escapeHtml(m.text)}</div>`).join('')}
@@ -602,6 +612,8 @@ function buildCommentCard(c){
         try { await recordDecision(c.id, cur === d ? null : d); } catch(err){ alert('Failed: '+err.message); }   // toggle off if same
       }
     });
+    card.querySelector('.cunq')?.addEventListener('click', async e => { e.stopPropagation();
+      try { await unqueueComment(c.id); } catch(err){ alert('Failed: '+err.message); } });
     const ro = card.querySelector('.creply-open');
     if (ro){ const form = card.querySelector('.creply-form');
       ro.onclick = e => { e.stopPropagation(); form.style.display = form.style.display==='none'?'block':'none'; if (form.style.display==='block') form.querySelector('.creply-t').focus(); };
@@ -922,7 +934,7 @@ function showApproveBar(){
   const staged = (review.comments||[]).filter(c => ['staged','approved'].includes(c.status));   // any staged change, inline-diff or not
   if (!staged.length) return;
   const p = partitionByDecision(review.comments);
-  const counts = `<b>${p.approved.length}</b> approved · ${p.rejected.length} rejected · ${p.undecided.length} to decide${p.revise.length?` · ${p.revise.length} to revise`:''}`;
+  const counts = `<b>${p.approved.length}</b> approved · ${p.rejected.length} rejected · ${p.undecided.length} to decide${p.revise.length?` · ${p.revise.length} to revise`:''}${p.queued.length?` · <b>${p.queued.length}</b> queued for merge`:''}`;
   const inlineN = staged.filter(c => c.staged_edit).length;
   const note = inlineN === staged.length ? `shown inline as <span class="tc-legend"><del>old</del> <ins>new</ins></span>`
              : inlineN ? `${inlineN} shown inline; figure/structure changes need a preview`
@@ -934,7 +946,7 @@ function showApproveBar(){
   const prevBtn = previewing
     ? `<button class="btn btn-primary" id="preview-btn" style="margin-left:auto"><i class="ti ti-arrow-back-up"></i>Exit preview</button>`
     : `<button class="btn" id="preview-btn" style="margin-left:auto"><i class="ti ti-eye"></i>Preview rendered</button>`;
-  bar.innerHTML = `${left}${prevBtn}<button class="btn btn-primary" id="merge-approved" ${p.approved.length?'':'disabled'}>Merge approved (${p.approved.length})</button>`;
+  bar.innerHTML = `${left}${prevBtn}<button class="btn btn-primary" id="merge-approved" ${p.approved.length?'':'disabled'}>Queue ${p.approved.length} for merge</button>`;
   read.prepend(bar);
   bar.querySelector('#merge-approved').onclick = approveChapter;
   bar.querySelector('#preview-btn').onclick = () => togglePreview(current);
@@ -943,20 +955,24 @@ async function approveChapter(){
   const t = tok(); if (!t){ flash('Add your access token first.'); return; }
   const p = partitionByDecision(review.comments);
   if (!p.approved.length){ flash('Approve at least one edit first.'); return; }
-  const undecided = p.undecided.length ? `\n${p.undecided.length} undecided edit(s) will be left staged for later.` : '';
-  if (!confirm(`Merge ${p.approved.length} approved edit(s) for Chapter ${chMeta(current).n} into the dissertation?` +
+  if (!confirm(`Queue ${p.approved.length} approved edit(s) for merge in Chapter ${chMeta(current).n}?` +
                (p.rejected.length?`\n${p.rejected.length} rejected edit(s) will be discarded.`:'') +
-               (p.revise.length?`\n${p.revise.length} edit(s) will be re-queued for revision.`:'') + undecided)) return;
-  flash('Requesting merge…');
-  try {
-    const { json, sha } = await getJson(t, 'jobs.json').catch(() => ({ json:null, sha:null }));
-    const jobs = Array.isArray(json) ? json : [];
-    jobs.push({ id:'j_'+Date.now().toString(36), type:'merge', chapter:current,
-                decisions:{ approved:p.approved, rejected:p.rejected, revise:p.revise },
-                status:'queued', requested_ts:new Date().toISOString() });
-    await putJson(t, 'jobs.json', jobs, sha, `review: merge approved (${p.approved.length}) in ${current}`);
-    flash(`Queued: merge ${p.approved.length} approved edit(s). Claude will rebuild + merge.`);
-  } catch(e){ flash('Approve failed: '+e.message); }
+               (p.revise.length?`\n${p.revise.length} edit(s) will be re-queued for revision.`:''))) return;
+  const q = queueApproved(review); const revise = q.revise; review = q.review; save(); renderComments(); refreshStaged();
+  // persist the promotion conflict-safe: re-apply queueApproved on the freshest remote copy
+  for (let attempt = 0; attempt < 5; attempt++){
+    const { json, sha } = await getJson(t, reviewPath(current)); if (!json) break;
+    const promoted = queueApproved(json).review;
+    try { await putJson(t, reviewPath(current), promoted, sha, `review: queue ${p.approved.length} for merge in ${current}`, false); break; }
+    catch(e){ if (/\b409\b/.test(e.message) && attempt < 4){ await new Promise(r=>setTimeout(r,250*(attempt+1))); continue; } throw e; }
+  }
+  const { json:jj, sha:js } = await getJson(t, 'jobs.json').catch(() => ({ json:null, sha:null }));
+  const jobs = Array.isArray(jj) ? jj : [];
+  for (const r of revise) jobs.push({ id:'j_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5), type:'apply-edits', chapter:current, comment_ids:[r.cid], revision:true, revise_note:r.note, status:'queued', requested_ts:new Date().toISOString() });
+  if (!jobs.some(j => j.type==='merge' && j.chapter===current && j.status==='queued'))
+    jobs.push({ id:'j_'+Date.now().toString(36), type:'merge', chapter:current, status:'queued', requested_ts:new Date().toISOString() });
+  await putJson(t, 'jobs.json', jobs, js, `review: merge trigger for ${current}`);
+  flash(`Queued ${p.approved.length} edit(s) for merge. Claude will merge them.`);
 }
 // load the branch-built rendered version (figures + text) from preview/<ch>.html — without merging
 let previewing = false;
@@ -1647,6 +1663,19 @@ async function recordDecision(id, decision, note){
     if (decision){ c.decision = decision; if (note) c.decision_note = note; c.decision_ts = new Date().toISOString(); }
     else { delete c.decision; delete c.decision_note; delete c.decision_ts; }
     try { await putJson(t, reviewPath(current), json, sha, `review: decide ${id} ${decision||'clear'}`, false); return; }
+    catch(e){ if (/\b409\b/.test(e.message) && attempt < 4){ await new Promise(r=>setTimeout(r,250*(attempt+1))); continue; } throw e; }
+  }
+}
+async function unqueueComment(id){
+  review = updateComment(review, id, { status:'staged' });
+  review = setDecision(review, id, null);
+  save(); renderComments(); refreshStaged();
+  const t = tok(); if (!t) return;
+  for (let attempt = 0; attempt < 5; attempt++){
+    const { json, sha } = await getJson(t, reviewPath(current)); if (!json) return;
+    const c = (json.comments||[]).find(x => x.id === id); if (!c) return;
+    c.status = 'staged'; delete c.decision; delete c.decision_note; delete c.decision_ts;
+    try { await putJson(t, reviewPath(current), json, sha, `review: unqueue ${id}`, false); return; }
     catch(e){ if (/\b409\b/.test(e.message) && attempt < 4){ await new Promise(r=>setTimeout(r,250*(attempt+1))); continue; } throw e; }
   }
 }
