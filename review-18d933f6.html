@@ -125,6 +125,11 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;pad
 .rel-pop{margin-top:7px;border-top:.5px dashed var(--border);padding-top:8px} .rel-pop textarea,.rel-pop select{width:100%;font:inherit;font-size:12.5px;color:var(--text);background:var(--bg);border:.5px solid var(--border);border-radius:6px;padding:6px 8px;outline:none;margin-bottom:6px}
 .rel-popacts{display:flex;gap:6px} .rel-popacts .btn{padding:4px 11px;font-size:12px}
 .rel-note{margin-top:6px;font-size:12.5px;line-height:1.45;color:var(--text-2);background:var(--bg-3);border-left:2px solid var(--warn);border-radius:0 6px 6px 0;padding:5px 9px}
+.cdec{display:flex;gap:5px;margin-top:8px;flex-wrap:wrap}
+.cdec-b{padding:3px 9px;font-size:11.5px}
+.cdec-b.on-approve{border-color:var(--success);color:var(--success);background:var(--success-bg)}
+.cdec-b.on-reject{border-color:var(--danger);color:var(--danger);background:var(--danger-bg)}
+.cdec-b.on-revise{border-color:var(--warn);color:var(--warn);background:var(--warn-bg)}
 /* slim overview rows in the releases panel */
 .rel-row{display:flex;align-items:flex-start;gap:9px;padding:8px 10px;border:.5px solid var(--border);border-radius:var(--r-md);margin-bottom:6px;background:var(--bg-2)} .rel-row.is-read{opacity:.72}
 .rel-row .rel-read{margin:2px 0 0} .rel-row-main{flex:1;min-width:0} .rel-row-h{font-size:11.5px;color:var(--text-3);display:flex;align-items:center;gap:6px;flex-wrap:wrap} .rel-row-h .chip{font-size:10px}
