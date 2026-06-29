@@ -1,6 +1,7 @@
 import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js';
 import { anchorFromSelection } from './anchor.js';
 import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js';
+import { exportClient } from './export-client.js';
 
 const DATA_REPO = 'mattlmccoy/dissertation-tracker-data';
 const CHAPTERS = [
@@ -1193,12 +1194,15 @@ function exportDialog(scope){
   const title = whole ? 'the whole dissertation' : `Chapter ${chMeta(scope).n} · ${escapeHtml(shortTitle(chMeta(scope).title))}`;
   const back = document.createElement('div'); back.id = 'expdlg';
   back.style.cssText = 'position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.34);display:flex;align-items:center;justify-content:center';
-  back.innerHTML = `<div class="expcard" style="background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-lg);box-shadow:0 18px 50px rgba(0,0,0,.28);width:min(440px,92vw);padding:20px 22px">
-      <div style="font-size:16px;font-weight:600;margin-bottom:3px">Export ${title}</div>
-      <div style="font-size:12.5px;color:var(--text-3);margin-bottom:15px">Built on your machine with comments and attribution. Appears under Downloads when ready.</div>
-      <div class="exp-sec">Formats</div>
+  const viewingThis = !whole && current === scope && document.getElementById('doc');
+  back.innerHTML = `<div class="expcard" style="background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-lg);box-shadow:0 18px 50px rgba(0,0,0,.28);width:min(460px,92vw);padding:20px 22px">
+      <div style="font-size:16px;font-weight:600;margin-bottom:12px">Export ${title}</div>
+      <div class="exp-sec">How</div>
+      <label class="exp-row"><input type="radio" name="exp-mode" value="instant" ${viewingThis?'checked':'disabled'}> Instant — built in your browser, downloads now${viewingThis?'':' <span style="color:var(--text-3)">(open the chapter to use)</span>'}</label>
+      <label class="exp-row"><input type="radio" name="exp-mode" value="typeset" ${viewingThis?'':'checked'}> Typeset — built on your machine (LaTeX-grade PDF), appears under Downloads</label>
+      <div class="exp-sec" style="margin-top:12px">Formats</div>
       <label class="exp-row"><input type="checkbox" class="exp-fmt" value="docx" checked> Word (.docx) — native comments + tracked changes</label>
-      <label class="exp-row"><input type="checkbox" class="exp-fmt" value="pdf"> PDF — typeset + reviewer-comments annex</label>
+      <label class="exp-row"><input type="checkbox" class="exp-fmt" value="pdf"> PDF <span class="exp-pdf-note" style="color:var(--text-3)"></span></label>
       <label class="exp-row"><input type="checkbox" class="exp-fmt" value="md"> Markdown</label>
       <div class="exp-sec" style="margin-top:12px">Comments</div>
       <label class="exp-row"><input type="checkbox" id="exp-resolved" checked> Include resolved/answered comments</label>
@@ -1207,17 +1211,34 @@ function exportDialog(scope){
         <button class="btn btn-primary" id="exp-go"><i class="ti ti-file-export"></i>Export</button></div>
       <div id="exp-stat" style="font-size:12px;color:var(--text-3);margin-top:8px"></div></div>`;
   document.body.appendChild(back);
+  const pdfNote = () => { const m = back.querySelector('input[name="exp-mode"]:checked')?.value;
+    back.querySelector('.exp-pdf-note').textContent = m === 'typeset' ? '— typeset + comments annex' : '— clean print (vector, rendered math)'; };
+  back.querySelectorAll('input[name="exp-mode"]').forEach(r => r.onchange = pdfNote); pdfNote();
   back.onclick = e => { if (e.target === back) back.remove(); };
   back.querySelector('#exp-cancel').onclick = () => back.remove();
+  const stat = back.querySelector('#exp-stat');
   back.querySelector('#exp-go').onclick = async () => {
     const formats = [...back.querySelectorAll('.exp-fmt:checked')].map(x => x.value);
-    if (!formats.length){ back.querySelector('#exp-stat').textContent = 'Pick at least one format.'; return; }
+    if (!formats.length){ stat.textContent = 'Pick at least one format.'; return; }
     const opts = { resolved: back.querySelector('#exp-resolved').checked };
-    back.querySelector('#exp-stat').textContent = 'Queuing…';
+    const mode = back.querySelector('input[name="exp-mode"]:checked')?.value;
+    if (mode === 'instant'){
+      const docEl = document.getElementById('doc');
+      if (!docEl){ stat.textContent = 'Open the chapter first to export it instantly.'; return; }
+      stat.textContent = 'Building in your browser…';
+      try {
+        const comments = gatherClientComments(opts.resolved);
+        const meta = { title: chMeta(scope).title, filebase: `Ch${chMeta(scope).n}_${shortTitle(chMeta(scope).title).replace(/[^a-z0-9]+/gi,'_').slice(0,40)}` };
+        await exportClient({ docEl, comments, formats, meta, save: saveBlob });
+        stat.textContent = 'Done ✓'; setTimeout(() => back.remove(), 1200);
+      } catch(e){ stat.textContent = 'Failed: ' + e.message; }
+      return;
+    }
+    stat.textContent = 'Queuing…';
     try { await queueExport(scope, formats, opts);
-      back.querySelector('#exp-stat').textContent = 'Queued ✓ — your machine will build it; check Downloads shortly.';
+      stat.textContent = 'Queued ✓ — your machine will build it; check Downloads shortly.';
       setTimeout(() => back.remove(), 1400); }
-    catch(e){ back.querySelector('#exp-stat').textContent = 'Failed: ' + e.message; }
+    catch(e){ stat.textContent = 'Failed: ' + e.message; }
   };
 }
 async function queueExport(scope, formats, opts){
@@ -1292,6 +1313,19 @@ const _SAVE_TYPES = {
   pdf:  { description:'PDF', accept:{ 'application/pdf':['.pdf'] } },
   md:   { description:'Markdown', accept:{ 'text/markdown':['.md'] } },
 };
+// save a blob with the native Finder/Explorer dialog (Chromium) or a standard download (Safari/Firefox)
+async function saveBlob(blob, filename){
+  if (window.showSaveFilePicker){
+    try {
+      const ext = (filename.split('.').pop()||'').toLowerCase(); const ty = _SAVE_TYPES[ext];
+      const handle = await window.showSaveFilePicker({ suggestedName: filename, ...(ty ? { types:[ty] } : {}) });
+      const ws = await handle.createWritable(); await ws.write(blob); await ws.close(); return;
+    } catch(e){ if (e.name === 'AbortError') return; /* unsupported/blocked → fall back below */ }
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = filename; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
 async function downloadArtifact(path){
   const t = tok(); if (!t){ flash('Add your access token first.'); return; }
   flash('Fetching…');
@@ -1301,19 +1335,22 @@ async function downloadArtifact(path){
     if (!r.ok) throw new Error('GitHub '+r.status);
     blob = await r.blob();
   } catch(e){ flash('Download failed: ' + e.message); return; }
-  const filename = path.split('/').pop();
-  // Chromium: native Finder/Explorer save dialog (you pick the folder). Safari/Firefox: standard download.
-  if (window.showSaveFilePicker){
-    try {
-      const ext = (filename.split('.').pop()||'').toLowerCase(); const ty = _SAVE_TYPES[ext];
-      const handle = await window.showSaveFilePicker({ suggestedName: filename, ...(ty ? { types:[ty] } : {}) });
-      const ws = await handle.createWritable(); await ws.write(blob); await ws.close();
-      flash('Saved ✓'); return;
-    } catch(e){ if (e.name === 'AbortError') return; /* unsupported/blocked → fall back below */ }
+  await saveBlob(blob, path.split('/').pop()); flash('Saved ✓');
+}
+// gather the current chapter's comments (advisor + owner) for an in-browser export
+function gatherClientComments(includeResolved){
+  const out = [];
+  for (const c of advisorComments){
+    if (c.resolution && !includeResolved) continue;
+    out.push({ author: whoLabel(c), date: c.created_ts, quote: c.anchor?.quote || '', body: c.body || '', edit: c.edit || null, resolution: c.resolution || null, kind: c.kind || 'text' });
   }
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob); a.download = filename; document.body.appendChild(a); a.click();
-  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  for (const c of (review.comments||[])){
+    if (c.from_advisor) continue;
+    if (c.resolution && !includeResolved) continue;
+    if (c.kind === 'direct') continue;   // direct edits aren't reviewer comments
+    out.push({ author: 'Matthew McCoy', date: c.created_ts, quote: c.anchor?.quote || '', body: c.body || '', edit: c.edit || null, resolution: c.resolution || null, kind: c.kind || 'text' });
+  }
+  return out;
 }
 function restoreCursor(){ if (review.cursor?.sec){ document.getElementById(review.cursor.sec)?.scrollIntoView(); } }
 
