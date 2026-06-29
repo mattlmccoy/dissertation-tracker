@@ -15,3 +15,21 @@ export const updateComment = (r, id, patch) =>
 export const deleteComment = (r, id) =>
   ({ ...r, comments:r.comments.filter(c => c.id!==id) });
 export const setCursor = (r, cursor) => ({ ...r, cursor });
+
+// owner decision on a staged edit: 'approve' | 'reject' | 'revise' | null (clear)
+export const setDecision = (r, id, decision, note) => ({ ...r, comments: r.comments.map(c => {
+  if (c.id !== id) return c;
+  const { decision: _d, decision_note: _n, decision_ts: _t, ...rest } = c;
+  return decision ? { ...rest, decision, ...(note ? { decision_note: note } : {}), decision_ts: new Date().toISOString() } : rest;
+}) });
+
+// split the chapter's STAGED comments by owner decision (ignores non-staged)
+export const partitionByDecision = (comments) => {
+  const staged = (comments || []).filter(c => c.status === 'staged' || c.status === 'approved');
+  return {
+    approved:  staged.filter(c => c.decision === 'approve').map(c => c.id),
+    rejected:  staged.filter(c => c.decision === 'reject').map(c => c.id),
+    revise:    staged.filter(c => c.decision === 'revise').map(c => ({ cid: c.id, note: c.decision_note || '' })),
+    undecided: staged.filter(c => !c.decision).map(c => c.id),
+  };
+};
