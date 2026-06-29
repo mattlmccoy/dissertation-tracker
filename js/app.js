@@ -949,10 +949,11 @@ function openSendMenu(){
   const open = review.comments.filter(c => c.status === 'open').length;
   menu.innerHTML = `
     <div class="smi" data-type="apply-edits"><i class="ti ti-git-pull-request"></i><div><div style="font-weight:500">Apply edits${open?` · ${open}`:''}</div><div class="smi-d">stage LaTeX edits on review-edits/${current}</div></div></div>
-    <div class="smi" data-type="run-agents"><i class="ti ti-robot-face"></i><div><div style="font-weight:500">Run review agents</div><div class="smi-d">dissertation-adversary read-only critique</div></div></div>`;
+    <div class="smi" data-type="run-agents"><i class="ti ti-robot-face"></i><div><div style="font-weight:500">Run review agents</div><div class="smi-d">dissertation-adversary read-only critique</div></div></div>
+    <div class="smi" data-type="export"><i class="ti ti-file-export"></i><div><div style="font-weight:500">Export this chapter…</div><div class="smi-d">Word · PDF · Markdown, with comments</div></div></div>`;
   document.body.appendChild(menu);
   menu.querySelectorAll('.smi').forEach(el => { el.onmouseenter = () => el.style.background='var(--bg-3)'; el.onmouseleave = () => el.style.background='transparent';
-    el.onclick = () => { menu.remove(); sendJob(el.dataset.type); }; });
+    el.onclick = () => { menu.remove(); if (el.dataset.type === 'export') exportDialog(current); else sendJob(el.dataset.type); }; });
   setTimeout(() => document.addEventListener('click', function h(e){ if (!menu.contains(e.target) && e.target.id!=='btn-send' && !e.target.closest?.('#btn-send')){ menu.remove(); document.removeEventListener('click', h); } }), 0);
 }
 async function sendJob(type){
@@ -983,6 +984,80 @@ async function sendJob(type){
 function flash(msg){ const t = document.createElement('div'); t.textContent = msg;
   t.style.cssText = 'position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:9px 16px;border-radius:20px;font-size:13px;z-index:60;box-shadow:0 6px 20px rgba(0,0,0,.2)';
   document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
+// ---------- export: chapter / dissertation -> Word · PDF · Markdown, with comments ----------
+function exportDialog(scope){
+  document.getElementById('expdlg')?.remove();
+  const whole = scope === '__all__';
+  const title = whole ? 'the whole dissertation' : `Chapter ${chMeta(scope).n} · ${escapeHtml(shortTitle(chMeta(scope).title))}`;
+  const back = document.createElement('div'); back.id = 'expdlg';
+  back.style.cssText = 'position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.34);display:flex;align-items:center;justify-content:center';
+  back.innerHTML = `<div class="expcard" style="background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-lg);box-shadow:0 18px 50px rgba(0,0,0,.28);width:min(440px,92vw);padding:20px 22px">
+      <div style="font-size:16px;font-weight:600;margin-bottom:3px">Export ${title}</div>
+      <div style="font-size:12.5px;color:var(--text-3);margin-bottom:15px">Built on your machine with comments and attribution. Appears under Downloads when ready.</div>
+      <div class="exp-sec">Formats</div>
+      <label class="exp-row"><input type="checkbox" class="exp-fmt" value="docx" checked> Word (.docx) — native comments + tracked changes</label>
+      <label class="exp-row"><input type="checkbox" class="exp-fmt" value="pdf"> PDF — typeset + reviewer-comments annex</label>
+      <label class="exp-row"><input type="checkbox" class="exp-fmt" value="md"> Markdown</label>
+      <div class="exp-sec" style="margin-top:12px">Comments</div>
+      <label class="exp-row"><input type="checkbox" id="exp-resolved" checked> Include resolved/answered comments</label>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">
+        <button class="btn" id="exp-cancel">Cancel</button>
+        <button class="btn btn-primary" id="exp-go"><i class="ti ti-file-export"></i>Export</button></div>
+      <div id="exp-stat" style="font-size:12px;color:var(--text-3);margin-top:8px"></div></div>`;
+  document.body.appendChild(back);
+  back.onclick = e => { if (e.target === back) back.remove(); };
+  back.querySelector('#exp-cancel').onclick = () => back.remove();
+  back.querySelector('#exp-go').onclick = async () => {
+    const formats = [...back.querySelectorAll('.exp-fmt:checked')].map(x => x.value);
+    if (!formats.length){ back.querySelector('#exp-stat').textContent = 'Pick at least one format.'; return; }
+    const opts = { resolved: back.querySelector('#exp-resolved').checked };
+    back.querySelector('#exp-stat').textContent = 'Queuing…';
+    try { await queueExport(scope, formats, opts);
+      back.querySelector('#exp-stat').textContent = 'Queued ✓ — your machine will build it; check Downloads shortly.';
+      setTimeout(() => back.remove(), 1400); }
+    catch(e){ back.querySelector('#exp-stat').textContent = 'Failed: ' + e.message; }
+  };
+}
+async function queueExport(scope, formats, opts){
+  const t = tok(); if (!t) throw new Error('add your access token first');
+  const { json, sha } = await getJson(t, 'jobs.json').catch(() => ({ json:null, sha:null }));
+  const jobs = Array.isArray(json) ? json : [];
+  jobs.push({ id:'j_'+Date.now().toString(36), type:'export', chapter:scope, formats, opts,
+    status:'queued', requested_ts:new Date().toISOString() });
+  await putJson(t, 'jobs.json', jobs, sha, `export: queue ${scope} (${formats.join(',')})`);
+}
+// completed exports (job.artifacts) -> a Downloads list; fetch private-repo bytes via the API and save as a blob
+async function listExports(){
+  const t = tok(); if (!t) return [];
+  const { json } = await getJson(t, 'jobs.json').catch(() => ({ json:null }));
+  return (Array.isArray(json) ? json : []).filter(j => j.type === 'export' && j.status === 'done' && (j.artifacts||[]).length)
+    .sort((a,b) => (b.done_ts||'').localeCompare(a.done_ts||''));
+}
+async function renderExportDownloads(){
+  const box = document.getElementById('exp-downloads'); if (!box) return;
+  const jobs = await listExports();
+  if (!jobs.length){ box.innerHTML = `<div style="font-size:12px;color:var(--text-3)">No exports yet.</div>`; return; }
+  const fmtName = { docx:'Word', pdf:'PDF', md:'Markdown' };
+  box.innerHTML = `<div style="font-size:11.5px;color:var(--text-3);margin-bottom:6px">Recent exports</div>` +
+    jobs.slice(0,8).map(j => {
+      const scope = j.chapter === '__all__' ? 'Whole dissertation' : `Ch. ${chMeta(j.chapter).n} · ${escapeHtml(shortTitle(chMeta(j.chapter).title))}`;
+      const when = j.done_ts ? fmtDate(j.done_ts) : '';
+      const links = (j.artifacts||[]).map(art => `<button class="btn exp-dl" data-path="${escapeHtml(art.path)}" style="padding:3px 9px;font-size:11.5px"><i class="ti ti-download"></i>${art.chapter && j.chapter==='__all__' ? escapeHtml(art.chapter)+' · ' : ''}${fmtName[art.fmt]||art.fmt}</button>`).join(' ');
+      return `<div style="padding:7px 0;border-top:.5px solid var(--border)"><div style="font-size:12.5px;font-weight:500">${scope}<span style="color:var(--text-3);font-weight:400"> · ${when}</span></div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px">${links}</div></div>`;
+    }).join('');
+  box.querySelectorAll('.exp-dl').forEach(b => b.onclick = () => downloadArtifact(b.dataset.path));
+}
+async function downloadArtifact(path){
+  const t = tok(); if (!t){ flash('Add your access token first.'); return; }
+  flash('Fetching…');
+  try { const url = `https://api.github.com/repos/mattlmccoy/dissertation-tracker-data/contents/${path}?t=${Date.now()}`;
+    const r = await fetch(url, { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' });
+    if (!r.ok) throw new Error('GitHub '+r.status);
+    const blob = await r.blob(); const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = path.split('/').pop(); document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); }
+  catch(e){ flash('Download failed: ' + e.message); }
+}
 function restoreCursor(){ if (review.cursor?.sec){ document.getElementById(review.cursor.sec)?.scrollIntoView(); } }
 
 // ---------- home / chapter library ----------
@@ -1426,7 +1501,13 @@ async function openReleasePanel(){
     <table class="rel-tbl"><thead><tr><th>Chapter</th>${advs.map(a => `<th>${escapeHtml(a)}<div style="font-weight:400;font-size:10px;color:var(--text-3)">${escapeHtml(rel[a].name||a)}</div></th>`).join('')}</tr></thead><tbody>${rows}<tr style="border-top:2px solid var(--border-2)"><td>Release responses<div style="font-weight:400;font-size:10px;color:var(--text-3)">let them see how you addressed their comments</div></td>${advs.map(a => `<td style="text-align:center"><input type="checkbox" data-resp="${a}" ${rel[a].responses_released?'checked':''}></td>`).join('')}</tr></tbody></table>
     <div style="display:flex;gap:8px;margin:14px 0 6px;align-items:center"><button class="btn btn-primary" id="rel-save">Save &amp; publish</button><span id="rel-stat" style="font-size:12px;color:var(--text-3)"></span></div>
     <div class="rel-links">${advs.map(a => `<div><b>${escapeHtml(rel[a].name||a)}</b> → <code>${escapeHtml(base + (a==='general'?'review-lab.html':a+'.html'))}</code></div>`).join('')}</div>
+    <div class="rel-sec" style="margin-top:26px">Export</div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><button class="btn" id="exp-all"><i class="ti ti-file-export"></i>Export whole dissertation…</button>
+      <span style="font-size:12px;color:var(--text-3)">Word · PDF · Markdown, with comments. Per-chapter export lives in each chapter's “…” menu.</span></div>
+    <div id="exp-downloads" style="margin-top:12px"></div>
     <div class="rel-sec" style="margin-top:26px">Comments received from advisors</div>${inboxHtml}`;
+  document.getElementById('exp-all').onclick = () => exportDialog('__all__');
+  renderExportDownloads();
   const refresh = () => openReleasePanel();
   // panel is overview-only: read-gate + batch send + open-in-context. All in-place (no full re-fetch).
   const syncAdvHeader = a => {

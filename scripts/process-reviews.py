@@ -17,7 +17,7 @@ script never invents edits. It only moves state and sets up the branch.
 
 Paths are auto-detected but can be overridden with --data / --diss.
 """
-import argparse, json, os, subprocess, sys, datetime, shutil, glob, secrets
+import argparse, json, os, re, subprocess, sys, datetime, shutil, glob, secrets
 
 
 def uniq():
@@ -120,6 +120,11 @@ def cmd_list(a):
         if j.get("type") == "merge":
             print(f"{C['c']}{j['id']}{C['x']}  {C['b']}{ch}{C['x']}  →  {C['g']}APPROVED — merge requested{C['x']}   review-edits/{ch} → main")
             print(f"   {C['dim']}Matt approved the staged edits. Run: process-reviews.py merge {ch}{C['x']}\n")
+            continue
+        if j.get("type") == "export":
+            tgt = "whole dissertation" if ch == "__all__" else ch
+            print(f"{C['c']}{j['id']}{C['x']}  {C['b']}{tgt}{C['x']}  →  {C['y']}export{C['x']}: {', '.join(j.get('formats', []))}")
+            print(f"   {C['dim']}Build it: process-reviews.py export {j['id']}{C['x']}\n")
             continue
         review, cmts = comments_for(a.data, j)
         print(f"{C['c']}{j['id']}{C['x']}  {C['b']}{ch}{C['x']}  →  review-edits/{ch}   "
@@ -455,6 +460,167 @@ def cmd_advisor_resolve(a):
     print(f"{C['g']}Recorded '{a.state}' on {a.advisor}/{a.chapter}/{a.comment_id}; the advisor sees it on their portal.{C['x']}")
 
 
+# ---------------- export: chapter / dissertation -> docx · pdf · md, with comments ----------------
+AUTHOR_NAME = "Matthew McCoy"
+
+def _chapter_order(diss):
+    """chapter basenames in main.tex \\include order (for whole-dissertation export)."""
+    try:
+        main = re.sub(r"%.*", "", open(os.path.join(diss, "main.tex"), encoding="utf-8").read())
+        return re.findall(r"\\include\{chapters/([^}]+)\}", main)
+    except OSError:
+        return []
+
+def _gather_comments(data, ch, include_resolved=True, reviewers=None):
+    """All reviewer comments for a chapter, attributed. Advisor files are the source of
+    reviewer comments; owner-original comments (no from_advisor) ride along as the author's."""
+    out = []
+    base = os.path.join(data, "advisor")
+    if os.path.isdir(base):
+        for adv in sorted(os.listdir(base)):
+            fp = os.path.join(base, adv, f"{ch}.json")
+            if not os.path.exists(fp):
+                continue
+            for c in load(fp, {"comments": []}).get("comments", []):
+                if c.get("status") not in ("submitted", "resolved", None) and not c.get("body"):
+                    continue
+                name = c.get("author") or adv
+                if reviewers and name not in reviewers and adv not in reviewers:
+                    continue
+                if c.get("resolution") and not include_resolved:
+                    continue
+                out.append({"author": name, "date": c.get("created_ts"),
+                            "quote": (c.get("anchor") or {}).get("quote", ""), "body": c.get("body", ""),
+                            "edit": c.get("edit"), "resolution": c.get("resolution"), "kind": c.get("kind", "text")})
+    rev = load(review_path(data, ch), {"comments": []})
+    for c in rev.get("comments", []):
+        if c.get("from_advisor"):
+            continue  # already counted from the advisor file
+        if reviewers and AUTHOR_NAME not in reviewers:
+            continue
+        if c.get("resolution") and not include_resolved:
+            continue
+        out.append({"author": AUTHOR_NAME, "date": c.get("created_ts"),
+                    "quote": (c.get("anchor") or {}).get("quote", ""), "body": c.get("body", ""),
+                    "edit": c.get("edit"), "resolution": c.get("resolution"), "kind": c.get("kind", "text")})
+    return out
+
+def _annex_md(ch, comments):
+    lines = [f"# Reviewer comments — {ch}", ""]
+    if not comments:
+        lines.append("_No comments._"); return "\n".join(lines)
+    for n, c in enumerate(comments, 1):
+        who = c["author"] + (f", {c['date'][:10]}" if c.get("date") else "")
+        lines.append(f"**{n}. [{who}]**" + (f' on *“{_norm_ws(c["quote"])[:90]}”*' if c.get("quote") else ""))
+        lines.append("")
+        lines.append(c.get("body", "") or "")
+        e = c.get("edit")
+        if e:
+            lines.append(f"\n> _Suggested {e.get('op')}:_ “{e.get('find','')}” → “{e.get('replacement','')}”")
+        r = c.get("resolution")
+        if r:
+            lines.append(f"\n> _{r.get('state')} by the author:_ {r.get('note','')}")
+        lines.append("")
+    return "\n".join(lines)
+
+def _norm_ws(s):
+    return re.sub(r"\s+", " ", (s or "").strip())
+
+def _build_docx(diss, ch, comments, outpath):
+    bd = os.path.join(diss, "export", "build"); os.makedirs(bd, exist_ok=True)
+    tmp = os.path.join(bd, f"_exp_{ch}"); os.makedirs(tmp, exist_ok=True)
+    env = dict(os.environ, OUTDIR=tmp)
+    r = subprocess.run(["bash", "export/export-chapter.sh", ch], cwd=diss, env=env, capture_output=True, text=True)
+    base = os.path.join(tmp, f"{ch}.docx")
+    if r.returncode != 0 or not os.path.exists(base):
+        raise RuntimeError(f"export-chapter.sh failed: {r.stderr.strip()[-300:]}")
+    cj = os.path.join(tmp, "comments.json"); dump(cj, comments)
+    a = subprocess.run(["python3", "export/annotate_docx.py", base, cj, outpath], cwd=diss, capture_output=True, text=True)
+    if a.returncode != 0 or not os.path.exists(outpath):
+        raise RuntimeError(f"annotate_docx failed: {a.stderr.strip()[-300:]}")
+    return a.stdout.strip()
+
+def _build_md(diss, ch, comments, outpath):
+    bd = os.path.join(diss, "export", "build"); tmp = os.path.join(bd, f"_exp_{ch}")
+    base = os.path.join(tmp, f"{ch}.docx")
+    if not os.path.exists(base):
+        _build_docx(diss, ch, comments, os.path.join(tmp, f"{ch}.annot.docx"))  # ensures base docx exists
+    body = subprocess.run(["pandoc", base, "-t", "gfm", "--wrap=none"], cwd=diss, capture_output=True, text=True)
+    md = (body.stdout or "") + "\n\n---\n\n" + _annex_md(ch, comments) + "\n"
+    open(outpath, "w", encoding="utf-8").write(md)
+
+def _ensure_full_pdf(diss):
+    pdf = os.path.join(diss, "drafts", "local_build.pdf")
+    stale = True
+    if os.path.exists(pdf):
+        srcs = subprocess.run(["bash", "-lc",
+            'find main.tex references.bib preamble chapters sections appendices -name "*.tex" -newer "%s" 2>/dev/null | head -1' % pdf],
+            cwd=diss, capture_output=True, text=True).stdout.strip()
+        stale = bool(srcs)
+    if stale:
+        b = subprocess.run(["bash", "export/build-pdf.sh", pdf], cwd=diss, capture_output=True, text=True)
+        if not os.path.exists(pdf):
+            raise RuntimeError(f"build-pdf.sh produced no PDF: {b.stderr.strip()[-300:]}")
+    return pdf
+
+def _build_pdf(diss, ch, comments, outpath):
+    from pypdf import PdfReader, PdfWriter
+    bd = os.path.join(diss, "export", "build"); tmp = os.path.join(bd, f"_exp_{ch}"); os.makedirs(tmp, exist_ok=True)
+    full = _ensure_full_pdf(diss)
+    sl = subprocess.run(["python3", "export/pdf-chapter.py", full, ch], cwd=diss, capture_output=True, text=True)
+    chpdf = os.path.join(diss, "..", "advisor_updates", "chapters", f"{ch}.pdf")
+    chpdf = os.path.normpath(chpdf)
+    if not os.path.exists(chpdf):
+        raise RuntimeError(f"pdf-chapter.py produced no slice: {sl.stderr.strip()[-300:]}")
+    writer = PdfWriter()
+    for pg in PdfReader(chpdf).pages: writer.add_page(pg)
+    if comments:                                   # typeset "Reviewer comments" annex, concatenated
+        amd = os.path.join(tmp, "annex.md"); open(amd, "w", encoding="utf-8").write(_annex_md(ch, comments))
+        apdf = os.path.join(tmp, "annex.pdf")
+        subprocess.run(["pandoc", amd, "-o", apdf, "-V", "geometry:margin=1in"], cwd=diss, capture_output=True, text=True)
+        if os.path.exists(apdf):
+            for pg in PdfReader(apdf).pages: writer.add_page(pg)
+    with open(outpath, "wb") as f: writer.write(f)
+
+def cmd_export(a):
+    """Build a queued export job: chapter (or whole dissertation) -> requested formats, with comments."""
+    pull(a.data); pull(a.diss)
+    job = find_job(a.data, a.job_id)
+    if job.get("type") != "export":
+        sys.exit(f"{C['r']}job {a.job_id} is not an export job{C['x']}")
+    scope = job.get("chapter", "__all__")
+    chapters = _chapter_order(a.diss) if scope == "__all__" else [scope]
+    formats = job.get("formats") or ["docx", "pdf", "md"]
+    opts = job.get("opts") or {}
+    include_resolved = opts.get("resolved", True); reviewers = opts.get("reviewers")
+    ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d-%H%M")
+    artifacts = []
+    label = scope
+    outroot = os.path.join(a.data, "exports", label); os.makedirs(outroot, exist_ok=True)
+    for ch in chapters:
+        comments = _gather_comments(a.data, ch, include_resolved, reviewers)
+        builders = {"docx": _build_docx, "md": _build_md, "pdf": _build_pdf}
+        for fmt in formats:
+            if fmt not in builders: continue
+            out = os.path.join(outroot, f"{ch}__{ts}.{fmt}")
+            try:
+                if fmt == "docx": _build_docx(a.diss, ch, comments, out)
+                elif fmt == "md": _build_md(a.diss, ch, comments, out)
+                elif fmt == "pdf": _build_pdf(a.diss, ch, comments, out)
+                artifacts.append({"chapter": ch, "fmt": fmt, "path": os.path.relpath(out, a.data),
+                                  "comments": len(comments)})
+                print(f"{C['g']}built {fmt}: {os.path.relpath(out, a.data)} ({len(comments)} comment(s)){C['x']}")
+            except Exception as e:
+                print(f"{C['y']}{fmt} for {ch} failed: {e}{C['x']}")
+    jobs = load(jobs_path(a.data), [])
+    for j in jobs:
+        if j.get("id") == a.job_id:
+            j["status"] = "done"; j["done_ts"] = now(); j["artifacts"] = artifacts
+    dump(jobs_path(a.data), jobs)
+    _push_data(a, f"export: {label} ({', '.join(formats)}) — {len(artifacts)} artifact(s)")
+    print(f"{C['g']}Export {a.job_id} done — {len(artifacts)} artifact(s) under exports/{label}/.{C['x']}")
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--data", default=DEFAULT_DATA, help="local clone of dissertation-tracker-data")
@@ -468,6 +634,7 @@ def main():
     sp = sub.add_parser("merge", help="merge review-edits/<ch> -> main, republish, mark merged"); sp.add_argument("chapter"); sp.set_defaults(fn=cmd_merge)
     sp = sub.add_parser("preview", help="build review-edits/<ch> into preview/<ch>.html (no merge)"); sp.add_argument("chapter"); sp.set_defaults(fn=cmd_preview)
     sp = sub.add_parser("done", help="mark any job done (e.g. after run-agents)"); sp.add_argument("job_id"); sp.set_defaults(fn=cmd_done)
+    sp = sub.add_parser("export", help="build a queued export job (chapter/dissertation -> docx·pdf·md with comments)"); sp.add_argument("job_id"); sp.set_defaults(fn=cmd_export)
     sp_decide = sub.add_parser("decide", help="record an owner decision on a staged comment"); sp_decide.add_argument("chapter"); sp_decide.add_argument("comment_id"); sp_decide.add_argument("decision", choices=["approve", "reject", "revise"]); sp_decide.add_argument("note", nargs="?", default=""); sp_decide.set_defaults(fn=cmd_decide)
     sub.add_parser("advisor-list", help="list advisor-submitted comments + resolutions").set_defaults(fn=cmd_advisor_list)
     sp = sub.add_parser("advisor-resolve", help="record how an advisor comment was addressed"); sp.add_argument("advisor"); sp.add_argument("chapter"); sp.add_argument("comment_id"); sp.add_argument("state", choices=["addressed","declined","noted"]); sp.add_argument("note"); sp.add_argument("--before", default=""); sp.add_argument("--after", default=""); sp.set_defaults(fn=cmd_advisor_resolve)
