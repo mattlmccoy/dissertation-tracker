@@ -161,6 +161,98 @@ function renderDoc(fragment){
   restoreCursor();
   syncDown();
   loadAdvisorComments(current);
+  if (!previewing) loadSrcmapPencils(current);
+}
+// ---------- in-context direct editor (prose -> confirm LaTeX diff -> stage) ----------
+const _srcmap = {};   // ch -> { normHead: source_text }
+const _normHead = s => (s||'').replace(/\s+/g,' ').trim().slice(0,80).toLowerCase();
+async function loadSrcmapPencils(ch){
+  try {
+    if (!_srcmap[ch]){
+      const dev = location.hostname==='localhost' || location.hostname==='127.0.0.1';
+      let json = null;
+      if (dev){ const r = await fetch(`./content/${ch}.srcmap.json`); if (r.ok) json = await r.json(); }
+      else { const t = tok(); if (!t) return; const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/content/${ch}.srcmap.json?t=${Date.now()}`, { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' }); if (r.ok) json = await r.json(); }
+      _srcmap[ch] = {}; for (const e of (json?.paragraphs||[])) _srcmap[ch][_normHead(e.head)] = e.source_text;
+    }
+    const map = _srcmap[ch]; if (!map || !Object.keys(map).length) return;
+    document.querySelectorAll('#doc p').forEach(p => {
+      if (p.closest('figure, #footnotes, .references, #refs')) return;
+      const txt = p.textContent || ''; if (txt.trim().length < 24) return;
+      const src = map[_normHead(txt)]; if (!src || p.querySelector('.pen-btn')) return;
+      p.classList.add('editable-p');
+      const btn = document.createElement('button'); btn.className = 'pen-btn'; btn.title = 'Edit this paragraph';
+      btn.innerHTML = '<i class="ti ti-pencil"></i>';
+      btn.onclick = e => { e.stopPropagation(); startDirectEdit(p, src); };
+      p.appendChild(btn);
+    });
+  } catch(e){ /* editor is optional; never block reading */ }
+}
+function startDirectEdit(p, source){
+  if (document.querySelector('.pedit')) return;
+  const proseBefore = (p.textContent||'').replace(/\s+/g,' ').trim();
+  const box = document.createElement('div'); box.className = 'pedit';
+  box.innerHTML = `<textarea class="pedit-ta"></textarea>
+    <div class="pedit-acts"><button class="btn btn-primary pedit-next">Review change →</button><button class="btn pedit-cancel">Cancel</button>
+      <span style="font-size:11.5px;color:var(--text-3);margin-left:4px">Edit the prose; you'll confirm the LaTeX before it stages.</span></div>`;
+  p.style.display = 'none'; p.after(box);
+  const ta = box.querySelector('.pedit-ta'); ta.value = proseBefore; ta.style.height = Math.max(70, ta.scrollHeight)+'px'; ta.focus();
+  ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight+'px'; };
+  const close = () => { box.remove(); p.style.display = ''; };
+  box.querySelector('.pedit-cancel').onclick = close;
+  box.querySelector('.pedit-next').onclick = () => { const after = ta.value.replace(/\s+/g,' ').trim();
+    if (after === proseBefore){ close(); return; } confirmDirectEdit(p, source, proseBefore, after, close); };
+}
+// word-level common prefix/suffix -> single changed span; transpose onto the LaTeX source if uniquely locatable
+function transposeToSource(before, after, source){
+  const a = before.split(/\s+/), b = after.split(/\s+/);
+  let pre = 0; while (pre < a.length && pre < b.length && a[pre] === b[pre]) pre++;
+  let suf = 0; while (suf < a.length-pre && suf < b.length-pre && a[a.length-1-suf] === b[b.length-1-suf]) suf++;
+  const oldMid = a.slice(pre, a.length-suf).join(' '), newMid = b.slice(pre, b.length-suf).join(' ');
+  if (oldMid && source.split(oldMid).length === 2) return { replacement: source.replace(oldMid, newMid), auto:true };
+  return { replacement: source, auto:false };   // couldn't safely map — owner edits the source directly
+}
+function confirmDirectEdit(p, source, before, after, closeEditor){
+  const { replacement, auto } = transposeToSource(before, after, source);
+  const back = document.createElement('div'); back.className = 'pconfirm-back';
+  back.innerHTML = `<div class="pconfirm">
+      <div style="font-size:15px;font-weight:600;margin-bottom:3px">Confirm the LaTeX change</div>
+      <div style="font-size:12px;color:var(--text-3);margin-bottom:12px">${auto ? 'Your prose edit was mapped to the source below — confirm or adjust it.' : "Couldn't auto-map your edit to the LaTeX (it touches markup or math) — make the change in the source below."}</div>
+      <div class="pc-lbl">Your prose change</div>
+      <div class="pc-prose"><div class="pc-before">${escapeHtml(before)}</div><div class="pc-after">${escapeHtml(after)}</div></div>
+      <div class="pc-lbl" style="margin-top:12px">LaTeX source — original</div>
+      <pre class="pc-src pc-orig">${escapeHtml(source)}</pre>
+      <div class="pc-lbl" style="margin-top:10px">LaTeX source — new (editable)</div>
+      <textarea class="pc-new">${escapeHtml(replacement)}</textarea>
+      <div class="pc-acts"><button class="btn btn-primary pc-stage">Stage this edit</button><button class="btn pc-cancel">Cancel</button>
+        <span class="pc-stat" style="font-size:11.5px;color:var(--text-3)"></span></div></div>`;
+  document.body.appendChild(back);
+  back.onclick = e => { if (e.target === back) back.remove(); };
+  back.querySelector('.pc-cancel').onclick = () => back.remove();
+  back.querySelector('.pc-stage').onclick = async () => {
+    const newSource = back.querySelector('.pc-new').value;
+    if (newSource === source){ back.querySelector('.pc-stat').textContent = 'No source change.'; return; }
+    back.querySelector('.pc-stat').textContent = 'Staging…';
+    try { await stageDirectEdit(current, source, newSource, before, after);
+      back.remove(); closeEditor();
+      p.classList.add('p-staged'); p.style.display = ''; flash('Staged — preview, then Approve & merge.'); }
+    catch(e){ back.querySelector('.pc-stat').textContent = 'Failed: ' + e.message; }
+  };
+}
+async function stageDirectEdit(ch, source, newSource, before, after){
+  const t = tok(); if (!t) throw new Error('add your access token first');
+  // record as a first-class staged edit in the owner review, then queue a deterministic apply-direct job
+  review = addComment(review, { anchor:{ quote: before.slice(0,90), section:'' }, kind:'direct', tag:'edit',
+    body:'Direct edit', edit:{ op:'replace', find:source, replacement:newSource } });
+  const nc = review.comments[review.comments.length-1];
+  nc.prose_before = before; nc.prose_after = after;
+  review = updateComment(review, nc.id, { status:'queued' });
+  save(); await syncUp();
+  const { json, sha } = await getJson(t, 'jobs.json').catch(() => ({ json:null, sha:null }));
+  const jobs = Array.isArray(json) ? json : [];
+  jobs.push({ id:'j_'+Date.now().toString(36), type:'apply-direct', chapter:ch, comment_ids:[nc.id], status:'queued', requested_ts:new Date().toISOString() });
+  await putJson(t, 'jobs.json', jobs, sha, `direct: stage edit on ${ch}`);
+  renderComments(); refreshStaged();
 }
 // ---------- advisor comments surfaced in the owner reviewer ----------
 const ADVISOR_IDS = ['CJS','CCS'];
