@@ -959,6 +959,7 @@ async function approveChapter(){
                (p.rejected.length?`\n${p.rejected.length} rejected edit(s) will be discarded.`:'') +
                (p.revise.length?`\n${p.revise.length} edit(s) will be re-queued for revision.`:''))) return;
   const q = queueApproved(review); const revise = q.revise; review = q.review; save(); renderComments(); refreshStaged();
+  try {
   // persist the promotion conflict-safe: re-apply queueApproved on the freshest remote copy
   for (let attempt = 0; attempt < 5; attempt++){
     const { json, sha } = await getJson(t, reviewPath(current)); if (!json) break;
@@ -973,6 +974,7 @@ async function approveChapter(){
     jobs.push({ id:'j_'+Date.now().toString(36), type:'merge', chapter:current, status:'queued', requested_ts:new Date().toISOString() });
   await putJson(t, 'jobs.json', jobs, js, `review: merge trigger for ${current}`);
   flash(`Queued ${p.approved.length} edit(s) for merge. Claude will merge them.`);
+  } catch(e){ flash('Queue failed — your decisions are saved on this device; please retry. ' + e.message, 5000); }
 }
 // load the branch-built rendered version (figures + text) from preview/<ch>.html — without merging
 let previewing = false;
