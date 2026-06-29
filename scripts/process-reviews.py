@@ -17,7 +17,11 @@ script never invents edits. It only moves state and sets up the branch.
 
 Paths are auto-detected but can be overridden with --data / --diss.
 """
-import argparse, json, os, subprocess, sys, datetime, shutil, glob
+import argparse, json, os, subprocess, sys, datetime, shutil, glob, secrets
+
+
+def uniq():
+    return secrets.token_hex(4)
 
 HOME = os.path.expanduser("~")
 DEFAULT_DATA = os.path.join(HOME, "code", "put_github_repos_here", "dissertation-tracker-data")
@@ -264,6 +268,22 @@ def cmd_note(a):
     print(f"{C['g']}Noted {a.comment_id} (status kept as '{hit.get('status')}'){extra}; the app shows your explanation.{C['x']}")
 
 
+def cmd_decide(a):
+    """Record an owner decision (approve|reject|revise) on a staged comment."""
+    pull(a.data)
+    rp = review_path(a.data, a.chapter); review = load(rp, None)
+    if review is None: sys.exit(f"{C['r']}no review at {rp}{C['x']}")
+    found = False
+    for c in review.get("comments", []):
+        if c.get("id") == a.comment_id:
+            c["decision"] = a.decision
+            if a.note: c["decision_note"] = a.note
+            c["decision_ts"] = now(); found = True
+    if not found: sys.exit(f"{C['r']}comment {a.comment_id} not found{C['x']}")
+    dump(rp, review); _push_data(a, f"review: decide {a.comment_id} {a.decision}")
+    print(f"{C['g']}Recorded {a.decision} on {a.comment_id}.{C['x']}")
+
+
 def cmd_done(a):
     """Mark any job done (e.g. after running agents in-session)."""
     pull(a.data)
@@ -318,13 +338,36 @@ def cmd_merge(a):
         shutil.copy(src, os.path.join(a.data, "content", f"{ch}.html"))
     prev = os.path.join(a.data, "preview", f"{ch}.html")   # published == staged now; drop the preview
     if os.path.exists(prev): os.remove(prev)
-    # flip the chapter's staged/approved comments to merged
+    # decision subset: prefer the merge job's explicit lists, else fall back to "all staged"
+    job = next((j for j in load(jobs_path(a.data), []) if j.get("type") == "merge"
+                and j.get("chapter") == ch and j.get("status") == "queued"), None)
+    sel = (job or {}).get("decisions")
     rp = review_path(a.data, ch); review = load(rp, None); n = 0
+    requeue = []
     if review:
+        approved = set((sel or {}).get("approved", []))
+        rejected = set((sel or {}).get("rejected", []))
+        revise = {d["cid"]: d.get("note", "") for d in (sel or {}).get("revise", [])}
         for c in review.get("comments", []):
-            if c.get("status") in ("staged", "approved"):
+            if c.get("status") not in ("staged", "approved"): continue
+            cid = c.get("id")
+            if sel is None or cid in approved:
                 c["status"] = "merged"; c.setdefault("claude", {})["branch"] = branch; n += 1
+            elif cid in rejected:
+                c["status"] = "declined"; c.pop("staged_edit", None)
+            elif cid in revise:
+                c["status"] = "queued"; c.pop("staged_edit", None)
+                requeue.append((cid, revise[cid]))
+            # undecided staged comments are left as-is for a later round
         dump(rp, review)
+    # re-queue 'revise' comments as fresh apply-edits jobs carrying the note
+    if requeue:
+        jobs = load(jobs_path(a.data), [])
+        for cid, note in requeue:
+            jobs.append({"id": "j_" + uniq(), "type": "apply-edits", "chapter": ch,
+                         "comment_ids": [cid], "revision": True, "revise_note": note,
+                         "status": "queued", "requested_ts": now()})
+        dump(jobs_path(a.data), jobs)
     jobs = load(jobs_path(a.data), [])
     for j in jobs:
         if j.get("type") == "merge" and j.get("chapter") == ch and j.get("status") == "queued":
@@ -425,6 +468,7 @@ def main():
     sp = sub.add_parser("merge", help="merge review-edits/<ch> -> main, republish, mark merged"); sp.add_argument("chapter"); sp.set_defaults(fn=cmd_merge)
     sp = sub.add_parser("preview", help="build review-edits/<ch> into preview/<ch>.html (no merge)"); sp.add_argument("chapter"); sp.set_defaults(fn=cmd_preview)
     sp = sub.add_parser("done", help="mark any job done (e.g. after run-agents)"); sp.add_argument("job_id"); sp.set_defaults(fn=cmd_done)
+    sp_decide = sub.add_parser("decide", help="record an owner decision on a staged comment"); sp_decide.add_argument("chapter"); sp_decide.add_argument("comment_id"); sp_decide.add_argument("decision", choices=["approve", "reject", "revise"]); sp_decide.add_argument("note", nargs="?", default=""); sp_decide.set_defaults(fn=cmd_decide)
     sub.add_parser("advisor-list", help="list advisor-submitted comments + resolutions").set_defaults(fn=cmd_advisor_list)
     sp = sub.add_parser("advisor-resolve", help="record how an advisor comment was addressed"); sp.add_argument("advisor"); sp.add_argument("chapter"); sp.add_argument("comment_id"); sp.add_argument("state", choices=["addressed","declined","noted"]); sp.add_argument("note"); sp.add_argument("--before", default=""); sp.add_argument("--after", default=""); sp.set_defaults(fn=cmd_advisor_resolve)
     a = p.parse_args()
