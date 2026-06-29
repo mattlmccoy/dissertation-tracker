@@ -676,11 +676,57 @@ function buildAdvCard(c){
     catch(e){ stat.textContent = 'Failed: ' + e.message; } };
   return card;
 }
+// ---------- robust anchor location (a stored quote rarely byte-matches rendered HTML:
+// injected "Figure 3.9." prefixes, KaTeX math, citation brackets, curly quotes/dashes) ----------
+function normText(s){
+  return (s||'').replace(/ /g,' ').normalize('NFKD')
+    .replace(/[‐-―]/g,'-').replace(/[‘’]/g,"'").replace(/[“”]/g,'"')
+    .replace(/\s+/g,' ').toLowerCase().trim();
+}
+function keyWords(s){
+  return normText(s)
+    .replace(/^(figure|fig\.?|table|tab\.?|eq\.?|equation)\s*[\d.]+\s*[:.]?\s*/i,'')   // drop a leading "Figure 3.9.:"
+    .replace(/\[[^\]]*\]/g,' ').replace(/[^a-z0-9]+/g,' ').trim().split(' ').filter(w => w.length>=3);
+}
+function locateAnchor(c){
+  const sel = `#doc .cmark[data-id="${c.id}"], #doc .cmark[data-aid="${c.id}"], #doc .cmark-el[data-cid="${c.id}"], #doc figure[data-cid="${c.id}"]`;
+  const mark = document.querySelector(sel); if (mark) return mark;        // painted highlight wins
+  const quote = c.anchor?.quote || '';
+  const cands = [...document.querySelectorAll('#doc p, #doc li, #doc figure, #doc figcaption, #doc h2, #doc h3, #doc td, #doc blockquote')];
+  // 1) contiguous normalized substring, progressively shorter
+  const nq = normText(quote);
+  for (const len of [90, 55, 32, 18]){
+    if (nq.length < 8) break;
+    const probe = nq.slice(0, Math.min(len, nq.length));
+    const hit = cands.find(e => normText(e.textContent).includes(probe));
+    if (hit) return hit;
+  }
+  // 2) keyword overlap (resilient to math/citations/figure numbers)
+  const nw = keyWords(quote).slice(0, 12);
+  if (nw.length){
+    let best = null, bestScore = 0;
+    for (const e of cands){ const hay = new Set(keyWords(e.textContent)); let s = 0; for (const w of nw) if (hay.has(w)) s++;
+      if (s > bestScore){ bestScore = s; best = e; } }
+    if (best && bestScore >= Math.max(3, Math.ceil(nw.length * 0.5))) return best;
+  }
+  // 3) section heading as a last resort
+  if (c.anchor?.section){
+    const ns = normText(c.anchor.section);
+    const sec = [...document.querySelectorAll('#doc h2, #doc h3')].find(h => normText(h.textContent).includes(ns));
+    if (sec) return sec;
+  }
+  return null;
+}
 function jumpToAdvisor(c){
-  const mark = document.querySelector(`#doc .cmark[data-aid="${c.id}"]`);
-  const q = (c.anchor?.quote||'').replace(/\s+/g,' ').trim().slice(0,40);
-  const el = mark || [...document.querySelectorAll('#doc p, #doc li, #doc figure, #doc figcaption')].find(p => p.textContent.replace(/\s+/g,' ').includes(q));
-  if (el){ el.scrollIntoView({ behavior:'smooth', block:'center' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1500); }
+  const el = locateAnchor(c);
+  if (el) scrollFlash(el); else flash('Couldn’t find this passage in the chapter — it may have changed since the comment.');
+}
+// jump after a chapter is still loading: retry the locator until the doc + highlights are ready
+function jumpWhenReady(c, tries = 14){
+  const tick = () => { const el = (document.getElementById('doc') ? locateAnchor(c) : null);
+    if (el){ scrollFlash(el); return; }
+    if (tries-- > 0) setTimeout(tick, 280); else flash('Couldn’t find this passage in the chapter — it may have changed since the comment.'); };
+  tick();
 }
 function commentAction(id, act){
   const c = review.comments.find(x => x.id === id); if (!c) return;
@@ -705,10 +751,8 @@ function editCard(c){
 }
 function jumpTo(c){
   activeCommentId = c.id;
-  const mark = document.querySelector(`#doc .cmark[data-id="${c.id}"], #doc .cmark-el[data-cid="${c.id}"], #doc figure[data-cid="${c.id}"]`);
-  const q = (c.anchor.quote||'').replace(/\s+/g,' ').trim().slice(0,40);
-  const el = mark || [...document.querySelectorAll('#doc p, #doc li, #doc figure, #doc figcaption, #doc h2, #doc h3')].find(p => p.textContent.replace(/\s+/g,' ').includes(q));
-  if (el){ el.scrollIntoView({ behavior:'smooth', block:'center' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1500); }
+  const el = locateAnchor(c);
+  if (el) scrollFlash(el); else flash('Couldn’t find this passage in the chapter — it may have changed since the comment.');
 }
 function activateComment(id){
   activeCommentId = id; renderComments();
@@ -1388,8 +1432,8 @@ async function openReleasePanel(){
   document.querySelectorAll('.rel-row').forEach(el => {
     const a = el.dataset.a, ch = el.dataset.ch, cid = el.dataset.cid;
     el.querySelector('.rel-open').onclick = () => {
-      const q = el.dataset.q;
-      enterChapter(ch); setTimeout(() => { const tg = [...document.querySelectorAll('#doc p, #doc li, #doc figcaption')].find(p => p.textContent.replace(/\s+/g,' ').includes(q.slice(0,40))); if (tg){ tg.scrollIntoView({behavior:'smooth',block:'center'}); tg.classList.add('flash'); setTimeout(()=>tg.classList.remove('flash'),1500); } }, 1900);
+      enterChapter(ch);
+      jumpWhenReady({ id: cid, anchor: { quote: el.dataset.q, section: el.dataset.sec || '' } });
     };
     el.querySelector('.rel-readbox').onchange = async e => {
       const v = e.target.checked; const item = (inbox[a]||[]).find(x => x.c.id === cid);

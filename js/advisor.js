@@ -185,9 +185,10 @@ function renderDoc(fragment){
   fixFootnotes(doc); runKatex(doc); wireFigures(doc); wireCitations(doc); linkCrossRefs(doc); buildNav(); markWhatsNew(doc); paintHighlights();
   if (review.cursor?.sec) document.getElementById(review.cursor.sec)?.scrollIntoView();
   syncDown();
-  if (pendingJump){ const q=pendingJump; pendingJump=null; setTimeout(()=>{
-    const el=[...document.querySelectorAll('#doc p, #doc li, #doc figure, #doc figcaption, #doc h2, #doc h3')].find(p=>p.textContent.replace(/\s+/g,' ').includes(q.replace(/^[^:]*:\s*/,'').slice(0,40)));
-    if(el){ el.scrollIntoView({behavior:'smooth',block:'center'}); el.classList.add('flash'); setTimeout(()=>el.classList.remove('flash'),2000); } }, 350); }
+  if (pendingJump){ const q=pendingJump; pendingJump=null; let tries=14;
+    const tick=()=>{ const el=(document.getElementById('doc')?locateAnchor({anchor:{quote:q}}):null);
+      if(el){ scrollFlash(el); return; } if(tries-->0) setTimeout(tick,280); };
+    tick(); }
 }
 // "what changed since you last looked": per-section content fingerprint, compared to the last visit
 function _hash(s){ let h = 0; for (let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i)) | 0; return h; }
@@ -375,9 +376,26 @@ function editCard(c){ const w=document.createElement('div');
     <div style="display:flex;gap:6px;margin-top:8px"><button class="btn btn-primary" id="esave" style="padding:5px 13px;font-size:12px">Save</button><button class="btn" id="ecancel" style="padding:5px 13px;font-size:12px">Cancel</button></div>`;
   w.querySelector('#ecancel').onclick=()=>{ editingId=null; renderComments(); };
   w.querySelector('#esave').onclick=()=>{ review=updateComment(review,c.id,{body:w.querySelector('#ebody').value}); editingId=null; markDirty(); renderComments(); }; return w; }
-function jumpTo(c){ activeId=c.id; const mark=document.querySelector(`#doc .cmark[data-id="${c.id}"], #doc figure[data-cid="${c.id}"]`);
-  const q=(c.anchor.quote||'').replace(/\s+/g,' ').trim().slice(0,40); const el=mark||[...document.querySelectorAll('#doc p, #doc li, #doc figure, #doc figcaption, #doc h2, #doc h3')].find(p=>p.textContent.replace(/\s+/g,' ').includes(q));
-  if(el){ el.scrollIntoView({behavior:'smooth',block:'center'}); el.classList.add('flash'); setTimeout(()=>el.classList.remove('flash'),1500); } }
+// robust anchor location: a stored quote rarely byte-matches rendered HTML (injected
+// "Figure 3.9." prefixes, KaTeX math, citation brackets, curly quotes/dashes).
+function normText(s){ return (s||'').replace(/ /g,' ').normalize('NFKD')
+  .replace(/[‐-―]/g,'-').replace(/[‘’]/g,"'").replace(/[“”]/g,'"').replace(/\s+/g,' ').toLowerCase().trim(); }
+function keyWords(s){ return normText(s)
+  .replace(/^(figure|fig\.?|table|tab\.?|eq\.?|equation)\s*[\d.]+\s*[:.]?\s*/i,'')
+  .replace(/\[[^\]]*\]/g,' ').replace(/[^a-z0-9]+/g,' ').trim().split(' ').filter(w=>w.length>=3); }
+function locateAnchor(c){
+  const mark=document.querySelector(`#doc .cmark[data-id="${c.id}"], #doc .cmark[data-aid="${c.id}"], #doc figure[data-cid="${c.id}"]`); if(mark) return mark;
+  const quote=c.anchor?.quote||'';
+  const cands=[...document.querySelectorAll('#doc p, #doc li, #doc figure, #doc figcaption, #doc h2, #doc h3, #doc td, #doc blockquote')];
+  const nq=normText(quote);
+  for(const len of [90,55,32,18]){ if(nq.length<8) break; const probe=nq.slice(0,Math.min(len,nq.length)); const hit=cands.find(e=>normText(e.textContent).includes(probe)); if(hit) return hit; }
+  const nw=keyWords(quote).slice(0,12);
+  if(nw.length){ let best=null,bs=0; for(const e of cands){ const hay=new Set(keyWords(e.textContent)); let s=0; for(const w of nw) if(hay.has(w)) s++; if(s>bs){ bs=s; best=e; } } if(best&&bs>=Math.max(3,Math.ceil(nw.length*0.5))) return best; }
+  if(c.anchor?.section){ const ns=normText(c.anchor.section); const sec=[...document.querySelectorAll('#doc h2, #doc h3')].find(h=>normText(h.textContent).includes(ns)); if(sec) return sec; }
+  return null;
+}
+function jumpTo(c){ activeId=c.id; const el=locateAnchor(c);
+  if(el) scrollFlash(el); else flash('Couldn’t find this passage — it may have changed since the comment.'); }
 function activateComment(id){ activeId=id; renderComments(); document.querySelector(`#comments .ccard[data-id="${id}"]`)?.scrollIntoView({behavior:'smooth',block:'center'}); }
 function paintHighlights(){ const doc=document.getElementById('doc'); if(!doc) return;
   doc.querySelectorAll('mark.cmark').forEach(m=>{ const p=m.parentNode; m.replaceWith(...m.childNodes); p.normalize(); });
