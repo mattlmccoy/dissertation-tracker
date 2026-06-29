@@ -1,4 +1,4 @@
-import { newReview, addComment, updateComment, deleteComment } from './model.js';
+import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision } from './model.js';
 import { anchorFromSelection } from './anchor.js';
 import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl } from './gh.js';
 
@@ -573,6 +573,11 @@ function buildCommentCard(c){
       <div class="body" style="${st==='resolved'?'opacity:.5;text-decoration:line-through':''}">${escapeHtml(c.body)}</div>
       ${c.markup ? `<div class="cmarkup" data-path="${escapeHtml(c.markup.path)}" title="Your markup"><img alt="figure markup"></div>` : ''}
       ${suggHtml(c)}
+      ${['staged','approved'].includes(c.status) ? `<div class="cdec" data-id="${c.id}">
+        <button class="btn cdec-b ${c.decision==='approve'?'on-approve':''}" data-d="approve"><i class="ti ti-check"></i>Approve</button>
+        <button class="btn cdec-b ${c.decision==='reject'?'on-reject':''}" data-d="reject"><i class="ti ti-x"></i>Reject</button>
+        <button class="btn cdec-b ${c.decision==='revise'?'on-revise':''}" data-d="revise"><i class="ti ti-pencil"></i>Request changes</button>
+      </div>` : ''}
       ${c.claude?.response ? `<div class="cresp"><div class="cresp-h"><i class="ti ti-robot-face"></i>Claude</div>${escapeHtml(c.claude.response)}</div>` : ''}
       ${c.claude?.branch ? `<div class="branch"><i class="ti ti-git-branch"></i>${escapeHtml(c.claude.branch)}</div>` : ''}
       ${(c.thread||[]).map(m => `<div class="cmsg ${m.author==='you'?'me':'cl'}"><span class="cmsg-h">${m.author==='you'?'You':'Claude'} · ${(m.ts||'').slice(0,10)}</span>${escapeHtml(m.text)}</div>`).join('')}
@@ -585,6 +590,18 @@ function buildCommentCard(c){
     card.querySelector('.body').onclick = () => jumpTo(c);
     if (c.markup) loadMarkupThumb(card.querySelector('.cmarkup'), c.markup.path);
     card.querySelectorAll('.cact').forEach(b => b.onclick = e => { e.stopPropagation(); commentAction(c.id, b.dataset.act); });
+    card.querySelectorAll('.cdec-b').forEach(b => b.onclick = async e => {
+      e.stopPropagation();
+      const d = b.dataset.d;
+      const cur = (review.comments.find(x => x.id === c.id)||{}).decision;
+      if (d === 'revise'){
+        const note = prompt('What should change? (re-queues this edit for Claude)', '');
+        if (note === null) return;
+        try { await recordDecision(c.id, 'revise', note.trim()); } catch(err){ alert('Failed: '+err.message); }
+      } else {
+        try { await recordDecision(c.id, cur === d ? null : d); } catch(err){ alert('Failed: '+err.message); }   // toggle off if same
+      }
+    });
     const ro = card.querySelector('.creply-open');
     if (ro){ const form = card.querySelector('.creply-form');
       ro.onclick = e => { e.stopPropagation(); form.style.display = form.style.display==='none'?'block':'none'; if (form.style.display==='block') form.querySelector('.creply-t').focus(); };
@@ -849,7 +866,8 @@ function showApproveBar(){
   document.getElementById('approvebar')?.remove();
   const staged = (review.comments||[]).filter(c => ['staged','approved'].includes(c.status));   // any staged change, inline-diff or not
   if (!staged.length) return;
-  const allApproved = staged.every(c => c.status === 'approved');
+  const p = partitionByDecision(review.comments);
+  const counts = `<b>${p.approved.length}</b> approved · ${p.rejected.length} rejected · ${p.undecided.length} to decide${p.revise.length?` · ${p.revise.length} to revise`:''}`;
   const inlineN = staged.filter(c => c.staged_edit).length;
   const note = inlineN === staged.length ? `shown inline as <span class="tc-legend"><del>old</del> <ins>new</ins></span>`
              : inlineN ? `${inlineN} shown inline; figure/structure changes need a preview`
@@ -857,26 +875,32 @@ function showApproveBar(){
   const bar = document.createElement('div'); bar.id = 'approvebar'; bar.className = 'approvebar';
   const left = previewing
     ? `<i class="ti ti-eye"></i><span><b>Previewing the rendered staged version</b> — figures and text as they'll look after merge. Nothing is merged yet.</span>`
-    : `<i class="ti ti-git-pull-request"></i><span><b>${staged.length}</b> staged change${staged.length>1?'s':''} in this chapter — ${note}.</span>`;
+    : `<i class="ti ti-git-pull-request"></i><span><b>${staged.length}</b> staged change${staged.length>1?'s':''} — ${counts}. ${note}.</span>`;
   const prevBtn = previewing
     ? `<button class="btn btn-primary" id="preview-btn" style="margin-left:auto"><i class="ti ti-arrow-back-up"></i>Exit preview</button>`
     : `<button class="btn" id="preview-btn" style="margin-left:auto"><i class="ti ti-eye"></i>Preview rendered</button>`;
-  bar.innerHTML = `${left}${prevBtn}<button class="btn ${allApproved?'':'btn-primary'}" id="approve-btn" ${allApproved?'disabled':''}>${allApproved?'Merge requested ✓':'Approve & merge'}</button>`;
+  bar.innerHTML = `${left}${prevBtn}<button class="btn btn-primary" id="merge-approved" ${p.approved.length?'':'disabled'}>Merge approved (${p.approved.length})</button>`;
   read.prepend(bar);
-  bar.querySelector('#approve-btn').onclick = approveChapter;
+  bar.querySelector('#merge-approved').onclick = approveChapter;
   bar.querySelector('#preview-btn').onclick = () => togglePreview(current);
 }
 async function approveChapter(){
   const t = tok(); if (!t){ flash('Add your access token first.'); return; }
-  if (!confirm(`Approve all staged edits for Chapter ${chMeta(current).n} and merge them into the dissertation?`)) return;
+  const p = partitionByDecision(review.comments);
+  if (!p.approved.length){ flash('Approve at least one edit first.'); return; }
+  const undecided = p.undecided.length ? `\n${p.undecided.length} undecided edit(s) will be left staged for later.` : '';
+  if (!confirm(`Merge ${p.approved.length} approved edit(s) for Chapter ${chMeta(current).n} into the dissertation?` +
+               (p.rejected.length?`\n${p.rejected.length} rejected edit(s) will be discarded.`:'') +
+               (p.revise.length?`\n${p.revise.length} edit(s) will be re-queued for revision.`:'') + undecided)) return;
   flash('Requesting merge…');
   try {
-    const { json, sha } = await getJson(t, 'jobs.json'); const jobs = Array.isArray(json) ? json : [];
-    jobs.push({ id:'j_'+Date.now().toString(36), type:'merge', chapter:current, status:'queued', requested_ts:new Date().toISOString() });
-    await putJson(t, 'jobs.json', jobs, sha, 'review: approve+merge '+current);
-    review.comments.forEach(c => { if (c.status==='staged') c.status = 'approved'; });
-    save(); await syncUp(); renderComments(); refreshStaged();
-    flash('Approved — queued for merge into the dissertation.');
+    const { json, sha } = await getJson(t, 'jobs.json').catch(() => ({ json:null, sha:null }));
+    const jobs = Array.isArray(json) ? json : [];
+    jobs.push({ id:'j_'+Date.now().toString(36), type:'merge', chapter:current,
+                decisions:{ approved:p.approved, rejected:p.rejected, revise:p.revise },
+                status:'queued', requested_ts:new Date().toISOString() });
+    await putJson(t, 'jobs.json', jobs, sha, `review: merge approved (${p.approved.length}) in ${current}`);
+    flash(`Queued: merge ${p.approved.length} approved edit(s). Claude will rebuild + merge.`);
   } catch(e){ flash('Approve failed: '+e.message); }
 }
 // load the branch-built rendered version (figures + text) from preview/<ch>.html — without merging
@@ -1474,6 +1498,21 @@ async function _mutateAdvisorComment(advisorId, ch, cid, fn, msg){
 }
 async function recordResolution(advisorId, ch, cid, resolution){
   await _mutateAdvisorComment(advisorId, ch, cid, c => { c.resolution = resolution; c.read = true; }, `resolution: ${advisorId} ${ch} ${cid}`);
+}
+// owner decides on a staged edit (approve / reject / revise / clear); conflict-safe write to the chapter review
+async function recordDecision(id, decision, note){
+  review = setDecision(review, id, decision, note);          // local, immediate
+  save(); renderComments(); refreshStaged();
+  const t = tok(); if (!t) return;
+  for (let attempt = 0; attempt < 5; attempt++){             // conflict-safe: re-fetch, re-apply this decision, push
+    const { json, sha } = await getJson(t, reviewPath(current));
+    if (!json) return;
+    const c = (json.comments||[]).find(x => x.id === id); if (!c) return;
+    if (decision){ c.decision = decision; if (note) c.decision_note = note; c.decision_ts = new Date().toISOString(); }
+    else { delete c.decision; delete c.decision_note; delete c.decision_ts; }
+    try { await putJson(t, reviewPath(current), json, sha, `review: decide ${id} ${decision||'clear'}`, false); return; }
+    catch(e){ if (/\b409\b/.test(e.message) && attempt < 4){ await new Promise(r=>setTimeout(r,250*(attempt+1))); continue; } throw e; }
+  }
 }
 const markAdvisorRead = (advisorId, ch, cid, val=true) => _mutateAdvisorComment(advisorId, ch, cid, c => { c.read = val; }, `read: ${advisorId} ${ch} ${cid}`);
 const replyToAdvisorComment = (advisorId, ch, cid, text) => _mutateAdvisorComment(advisorId, ch, cid, c => { c.thread = [...(c.thread||[]), { author:'author', text, ts:new Date().toISOString() }]; c.read = true; }, `reply: ${advisorId} ${ch} ${cid}`);
