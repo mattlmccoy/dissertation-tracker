@@ -221,7 +221,7 @@ function sectionSig(doc){
   });
 }
 function markWhatsNew(doc){
-  const key = 'seen:'+ADVISOR.id+':'+current, cur = sectionSig(doc);
+  const key = 'seen:'+effId()+':'+current, cur = sectionSig(doc);
   let prev = null; try { prev = JSON.parse(localStorage.getItem(key) || 'null'); } catch(e){}
   if (prev && prev.length === cur.length && prev.every((p,i) => p.t === cur[i].t)){
     const changed = cur.map((c,i) => prev[i].h !== c.h ? i : -1).filter(i => i >= 0);
@@ -442,7 +442,7 @@ let editingId=null, activeId=null, _railResolvedOpen=false;
 let _railFilter={ q:'', kind:'all', sort:'doc' };
 // map comment id -> vertical position of its mark/anchor in the rendered doc
 function _railDocOrder(){
-  const map={}; const order=[...document.querySelectorAll('#doc .cmark[data-id], #doc figure[data-cid]')];
+  const map={}; const order=[...document.querySelectorAll('#doc .cmark[data-id], #doc figure[data-cid], #doc .cmark-el[data-cid]')];
   order.forEach((el,i)=>{ const id=el.dataset.id||el.dataset.cid; if(id!=null && !(id in map)) map[id]=i; });
   return map;
 }
@@ -539,7 +539,7 @@ function editCard(c){ const w=document.createElement('div');
   w.innerHTML=`<textarea id="ebody" style="width:100%;border:.5px solid var(--accent);border-radius:6px;padding:7px;font:inherit;background:var(--bg);color:var(--text);min-height:54px;outline:none">${escapeHtml(c.body)}</textarea>
     <div style="display:flex;gap:6px;margin-top:8px"><button class="btn btn-primary" id="esave" style="padding:5px 13px;font-size:12px">Save</button><button class="btn" id="ecancel" style="padding:5px 13px;font-size:12px">Cancel</button></div>`;
   w.querySelector('#ecancel').onclick=()=>{ editingId=null; renderComments(); };
-  w.querySelector('#esave').onclick=()=>{ review=updateComment(review,c.id,{body:w.querySelector('#ebody').value}); editingId=null; markDirty(); renderComments(); }; return w; }
+  w.querySelector('#esave').onclick=()=>{ review=updateComment(review,c.id,{body:w.querySelector('#ebody').value}); editingId=null; markDirty(); renderComments(); buildNav(); paintHighlights(); }; return w; }
 // robust anchor location: a stored quote rarely byte-matches rendered HTML (injected
 // "Figure 3.9." prefixes, KaTeX math, citation brackets, curly quotes/dashes).
 function normText(s){ return (s||'').replace(/ /g,' ').normalize('NFKD')
@@ -548,7 +548,7 @@ function keyWords(s){ return normText(s)
   .replace(/^(figure|fig\.?|table|tab\.?|eq\.?|equation)\s*[\d.]+\s*[:.]?\s*/i,'')
   .replace(/\[[^\]]*\]/g,' ').replace(/[^a-z0-9]+/g,' ').trim().split(' ').filter(w=>w.length>=3); }
 function locateAnchor(c){
-  const mark=document.querySelector(`#doc .cmark[data-id="${c.id}"], #doc .cmark[data-aid="${c.id}"], #doc figure[data-cid="${c.id}"]`); if(mark) return mark;
+  const mark=document.querySelector(`#doc .cmark[data-id="${c.id}"], #doc .cmark[data-aid="${c.id}"], #doc figure[data-cid="${c.id}"], #doc .cmark-el[data-cid="${c.id}"]`); if(mark) return mark;
   const quote=c.anchor?.quote||'';
   const cands=[...document.querySelectorAll('#doc p, #doc li, #doc figure, #doc figcaption, #doc h2, #doc h3, #doc td, #doc blockquote')];
   const nq=normText(quote);
@@ -640,11 +640,12 @@ function activateComment(id){ activeId=id; renderComments(); document.querySelec
 function paintHighlights(){ const doc=document.getElementById('doc'); if(!doc) return;
   doc.querySelectorAll('mark.cmark').forEach(m=>{ const p=m.parentNode; m.replaceWith(...m.childNodes); p.normalize(); });
   doc.querySelectorAll('figure[data-cid]').forEach(f=>{ f.classList.remove('cmark-fig'); delete f.dataset.cid; });
+  doc.querySelectorAll('.cmark-el').forEach(e=>{ e.classList.remove('cmark-el'); delete e.dataset.cid; e.onclick=null; });   // block-level fallback marks
   // normalize each block's/figure's text ONCE, not once per comment (was O(comments × blocks))
   const blocks=[...doc.querySelectorAll('p, li, figcaption')].map(el=>({el,txt:el.textContent.replace(/\s+/g,' ')}));
   const figs=[...doc.querySelectorAll('figure')].map(el=>({el,txt:el.textContent.replace(/\s+/g,' ')}));
-  review.comments.forEach(c=>{ if(c.kind==='figure'){ const q=(c.anchor.quote||'').replace(/^[^:]*:\s*/,'').replace(/\s+/g,' ').trim().slice(0,30); const fig=figs.find(f=>f.txt.includes(q))?.el; if(fig){ fig.classList.add('cmark-fig'); fig.dataset.cid=c.id; fig.style.setProperty('--mk','var(--accent)'); } return; }
-    const q=(c.anchor.quote||'').replace(/\s+/g,' ').trim(); if(q.length<4) return; const needle=q.slice(0,50); const el=blocks.find(b=>b.txt.includes(needle.slice(0,40)))?.el; if(!el) return; wrapInNode(el,needle,c); }); }
+  review.comments.forEach(c=>{ if(c.kind==='figure'){ const q=(c.anchor.quote||'').replace(/^[^:]*:\s*/,'').replace(/\s+/g,' ').trim().slice(0,30); const fig=(figs.find(f=>f.txt.includes(q)) || figs.find(f=>f.el.querySelector('img')?.src.endsWith(c.anchor.figure||' ')))?.el; if(fig){ fig.classList.add('cmark-fig'); fig.dataset.cid=c.id; fig.style.setProperty('--mk',`var(--${c.tag})`); } return; }
+    const q=(c.anchor.quote||'').replace(/\s+/g,' ').trim(); if(q.length<4) return; const needle=q.slice(0,50); const el=blocks.find(b=>b.txt.includes(needle.slice(0,40)))?.el; if(!el) return; if(!wrapInNode(el,needle,c)){ el.classList.add('cmark-el'); el.dataset.cid=c.id; el.style.setProperty('--mk',`var(--${c.tag})`); el.onclick=()=>activateComment(c.id); } }); }
 function wrapInNode(el,needle,c){ const tw=document.createTreeWalker(el,NodeFilter.SHOW_TEXT); let node, probe=needle.slice(0,30);
   while((node=tw.nextNode())){ const idx=node.nodeValue.indexOf(probe); if(idx>=0){ const r=document.createRange(); r.setStart(node,idx); r.setEnd(node,Math.min(node.nodeValue.length,idx+needle.length));
     const mk=document.createElement('mark'); mk.className='cmark'; mk.dataset.id=c.id; mk.dataset.tag=c.tag; if(c.edit) mk.dataset.sugg=c.edit.op; try{ r.surroundContents(mk); mk.onclick=e=>{ e.stopPropagation(); activateComment(c.id); }; return true; }catch(e){ return false; } } } return false; }
@@ -1087,6 +1088,7 @@ window.addEventListener('keydown',e=>{
   if(document.getElementById('helpov')&&e.key==='Escape'){ toggleHelp(); return; }
   const typing=/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName||'')||document.activeElement?.isContentEditable;
   if(typing){ if(e.key==='Escape') document.activeElement.blur(); return; }
+  if(!document.getElementById('doc') && !['?','f'].includes(e.key)) return;   // comment nav needs an open chapter
   switch(e.key){
     case 'j': e.preventDefault(); cycleComment(1); break;
     case 'k': e.preventDefault(); cycleComment(-1); break;
