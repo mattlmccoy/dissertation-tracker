@@ -263,7 +263,15 @@ function figureLabel(fig){ const cap=fig.querySelector('figcaption')?.textConten
 function wireFigures(doc){ doc.querySelectorAll('figure, img').forEach(el=>{ const fig=el.tagName==='FIGURE'?el:(el.closest('figure')||el); if(fig.dataset.figWired) return; fig.dataset.figWired='1'; fig.classList.add('fig-commentable');
   fig.addEventListener('click',e=>{ if(window.getSelection().toString().trim()) return; e.stopPropagation(); document.getElementById('pop')?.remove(); const info=figureLabel(fig);
     const rr=read.getBoundingClientRect(), fr=fig.getBoundingClientRect(); const rects=[{x:fr.x-rr.x,y:fr.y-rr.y+read.scrollTop,w:fr.width,h:fr.height}];
-    pending={ quote: info.label?`${info.label}${info.quote?': '+info.quote:''}`:(info.quote||'Figure'), kind:'figure', figure:info.id, section:headingFor(fig), confirmed:true, rects:[] }; showPopover(pending,rects,'suggestion',fig); }); }); }
+    pending={ quote: info.label?`${info.label}${info.quote?': '+info.quote:''}`:(info.quote||'Figure'), kind:'figure', figure:info.id, section:headingFor(fig), confirmed:true, rects:[] }; showPopover(pending,rects,'suggestion',fig); }); });
+  // tables and display equations are commentable too (no drawing — they carry no raster image)
+  doc.querySelectorAll('table, .katex-display').forEach(el=>{ if(el.dataset.blkWired) return; if(el.closest('figure')?.dataset.figWired) return; el.dataset.blkWired='1'; el.classList.add('blk-commentable');
+    el.addEventListener('click',e=>{ if(window.getSelection().toString().trim()) return; e.stopPropagation(); document.getElementById('pop')?.remove();
+      const isTable=el.tagName==='TABLE'; let label='', quote='';
+      if(isTable){ const cap=el.querySelector('caption')?.textContent.trim()||el.closest('figure')?.querySelector('figcaption')?.textContent.trim()||''; const m=cap.match(/^\s*Table\s+[\d.]+/i); label=m?m[0].trim():'Table'; quote=cap.slice(0,150)||'Table'; }
+      else { const num=(el.querySelector('.tag, .eqn-num')?.textContent||'').replace(/[()]/g,'').trim(); label=num?`Equation (${num})`:'Equation'; quote=(el.textContent||'').replace(/\s+/g,' ').trim().slice(0,120)||'Equation'; }
+      const rr=read.getBoundingClientRect(), fr=el.getBoundingClientRect(); const rects=[{x:fr.x-rr.x,y:fr.y-rr.y+read.scrollTop,w:fr.width,h:fr.height}];
+      pending={ quote: label?`${label}: ${quote}`:quote, kind:'figure', figure:label, section:headingFor(el), confirmed:true, rects:[] }; showPopover(pending,rects,'suggestion'); }); }); }
 const chapterByNum = n => CHAPTERS.find(c=>c.n===n);
 function sectionNumberMap(doc){ const n=chMeta(current).n; const map={}; let h2=0,h3=0; doc.querySelectorAll('h2, h3').forEach(h=>{ if(h.tagName==='H2'){h2++;h3=0;map[`${n}.${h2}`]=h;} else {h3++;map[`${n}.${h2}.${h3}`]=h;} }); return map; }
 function figTableMaps(doc){ const fig={},tab={}; doc.querySelectorAll('figure').forEach(f=>{ const m=(f.querySelector(':scope > figcaption')?.textContent||'').match(/^\s*Figure\s+(\d+(?:\.\d+)*)\./); if(m) fig[m[1]]=f; });
