@@ -112,7 +112,9 @@ async function syncDown(){ const t = tok(); if (!t) return;
       const deleted = new Set([ ...((review.deleted)||[]), ...((json.deleted)||[]) ]);
       if (deleted.size) review.deleted = [...deleted];
       // keep this reviewer's own body/edit/status; pull in the author's resolution from the remote file
-      review.comments = review.comments.filter(lc => !deleted.has(lc.id)).map(lc => { const rc = rById[lc.id]; return rc ? { ...lc, resolution: rc.resolution || lc.resolution } : lc; });
+      // adopt owner-authoritative fields from the remote so owner replies (thread), read-state, and
+      // send-state show in the main comment rail too — not only in the Responses view
+      review.comments = review.comments.filter(lc => !deleted.has(lc.id)).map(lc => { const rc = rById[lc.id]; return rc ? { ...lc, resolution: rc.resolution || lc.resolution, thread: rc.thread || lc.thread, read: rc.read ?? lc.read, sent: rc.sent ?? lc.sent } : lc; });
       (json.comments||[]).forEach(rc => { if (!deleted.has(rc.id) && !review.comments.find(c=>c.id===rc.id)) review.comments.push(rc); });
       save(); renderComments(); if (document.getElementById('doc')) paintHighlights(); } }
   catch(e){ /* first time / offline */ } }
@@ -734,6 +736,7 @@ async function loadResponses(){
       else if(t){ const r=await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/advisor/${effId()}/${ch}.json?t=${Date.now()}`,{headers:{Authorization:`Bearer ${t}`,Accept:'application/vnd.github.raw'},cache:'no-store'}); if(r.status===401) return showKeyExpired(); if(r.ok) json=await r.json(); }
     }catch(e){}
     const cs=(json?.comments||[]).filter(c=>c.status==='submitted');
+    cs.forEach(c=>{ const ov=localStorage.getItem(_respStateKey(ch,c.id)); if(ov!==null){ if(ov==='__open__') delete c.advisor_state; else c.advisor_state=ov; } });   // re-apply a triage flag that didn't sync
     if(cs.length) groups.push({ch, comments:cs});
   }
   renderResponses(groups);
@@ -743,6 +746,7 @@ const _respFigCache = {};        // ch -> published HTML (so we extract figures 
 let _respGroups = [];            // retained so triage actions can re-render
 let _respResolvedOpen = false;
 function _findRespComment(cid){ for(const g of _respGroups){ const c=(g.comments||[]).find(x=>x.id===cid); if(c) return c; } return null; }
+const _respStateKey = (ch, cid) => 'respstate:' + effId() + ':' + ch + ':' + cid;   // durable triage override, survives reload until the server confirms
 function renderResponses(groups){
   _respGroups = groups;
   if(!groups.length){ read.innerHTML=`<div class="empty">Nothing here yet. Once you've submitted comments and the author has replied, you'll see their replies here.</div>`; return; }
@@ -783,14 +787,16 @@ function renderResponses(groups){
 async function setAdvisorState(cid, ch, state){
   const c=_findRespComment(cid); if(c){ if(state) c.advisor_state=state; else delete c.advisor_state; }
   renderResponses(_respGroups);
+  localStorage.setItem(_respStateKey(ch,cid), state||'__open__');   // persist locally first so the flag survives a reload even if the sync fails
   const t=tok(); if(!t) return;
   // refetch-and-reapply each attempt so a 409 never re-sends a stale snapshot over a concurrent write
   const path=`advisor/${effId()}/${ch}.json`;
   for(let attempt=0; attempt<5; attempt++){
     try{ const { json, sha }=await getJson(t, path);
-      const tc=(json?.comments||[]).find(x=>x.id===cid); if(!tc) return;   // withdrawn/absent — nothing to write
+      const tc=(json?.comments||[]).find(x=>x.id===cid); if(!tc){ localStorage.removeItem(_respStateKey(ch,cid)); return; }   // withdrawn/absent — nothing to write
       if(state) tc.advisor_state=state; else delete tc.advisor_state;
-      await putJson(t, path, json, sha, `triage(${effId()}): ${ch} ${cid} ${state||'open'}`, false); return;
+      await putJson(t, path, json, sha, `triage(${effId()}): ${ch} ${cid} ${state||'open'}`, false);
+      localStorage.removeItem(_respStateKey(ch,cid)); return;   // confirmed on the server — drop the local override
     }catch(e){ if(/\b409\b/.test(e.message)&&attempt<4){ await new Promise(r=>setTimeout(r,250*(attempt+1))); continue; } flash('Saved here; sync failed: '+e.message); return; }
   }
 }

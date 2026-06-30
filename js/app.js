@@ -1827,7 +1827,7 @@ async function _mutateAdvisorComment(advisorId, ch, cid, fn, msg){
   for (let attempt = 0; attempt < 5; attempt++){
     const { json, sha } = await getJson(t, path);
     if (!json) throw new Error('advisor file not found');
-    const c = (json.comments||[]).find(x => x.id === cid); if (!c) throw new Error('comment not found');
+    const c = (json.comments||[]).find(x => x.id === cid); if (!c) throw new Error((json.deleted||[]).includes(cid) ? 'The reviewer withdrew this comment.' : 'comment not found');
     fn(c);
     try { await putJson(t, path, json, sha, msg, false); return; }
     catch(e){ if (String(e.message).includes('409') && attempt < 4){ await new Promise(r => setTimeout(r, 250*(attempt+1))); continue; } throw e; }
