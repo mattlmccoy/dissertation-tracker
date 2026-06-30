@@ -494,7 +494,83 @@ function locateAnchor(c){
   if(c.anchor?.section){ const ns=normText(c.anchor.section); const sec=[...document.querySelectorAll('#doc h2, #doc h3')].find(h=>normText(h.textContent).includes(ns)); if(sec) return sec; }
   return null;
 }
-function jumpTo(c){ activeId=c.id; const el=locateAnchor(c);
+// ---------- inline track-changes rendering of a suggested edit ----------
+// length-preserving fold (NFKD changes length, so this stays separate from normText): lowercase +
+// unicode dash/quote/nbsp normalized to single chars, so a collapsed-index maps back into the raw node.
+function litefold(s){ return (s||'').replace(/ /g,' ').replace(/[‐-―]/g,'-').replace(/[‘’]/g,"'").replace(/[“”]/g,'"').toLowerCase(); }
+// map an index in the whitespace-collapsed fold of `raw` back to an index in `raw`
+function _mapCollapsedIndex(raw, collapsedIdx){
+  const f=litefold(raw); let ci=0, prevSpace=false;
+  for(let i=0;i<f.length;i++){ const isSpace=/\s/.test(f[i]); const out=isSpace?(prevSpace?'':' '):f[i]; if(out){ if(ci===collapsedIdx) return i; ci++; } prevSpace=isSpace; }
+  return raw.length;
+}
+// the before/after of a comment's edit (advisor edits live on c.edit; resolutions on c.resolution)
+function editPair(c){
+  const e=c.edit, r=c.resolution;
+  const before=(e?.find ?? r?.before ?? '').toString();
+  const after =(e?.replacement ?? r?.after ?? '').toString();
+  return (before.trim() || after.trim()) ? { before: before.trim().replace(/\s+/g,' '), after: after.trim().replace(/\s+/g,' ') } : null;
+}
+// find `text` inside one text node of a candidate block (fold + whitespace-tolerant) → {node,start,end}
+function findEditRange(doc, text){
+  if(!text || text.length < 4) return null;
+  const probe=litefold(text).replace(/\s+/g,' ').trim().slice(0,40);
+  const fullLen=litefold(text).replace(/\s+/g,' ').trim().length;
+  for(const el of doc.querySelectorAll('p, li, figcaption, td, blockquote')){
+    if(!litefold(el.textContent).replace(/\s+/g,' ').includes(probe)) continue;
+    const tw=document.createTreeWalker(el, NodeFilter.SHOW_TEXT); let node;
+    while((node=tw.nextNode())){
+      const collapsed=litefold(node.nodeValue).replace(/\s+/g,' ');
+      const i=collapsed.indexOf(probe); if(i<0) continue;
+      const start=_mapCollapsedIndex(node.nodeValue, i);
+      const end=Math.min(node.nodeValue.length, _mapCollapsedIndex(node.nodeValue, i+fullLen));
+      return { node, start, end };
+    }
+  }
+  return null;
+}
+// remove any previously-painted track-changes nodes (restore original text) so diffs don't stack
+function clearEditNodes(){
+  document.querySelectorAll('#doc ins.tc-stage').forEach(n=>n.remove());
+  document.querySelectorAll('#doc del.tc-stage').forEach(n=>{ const p=n.parentNode; n.replaceWith(...n.childNodes); p.normalize(); });
+}
+// paint a struck-through `before` + highlighted `after` inline at the edit's spot. Works whether the
+// OLD text is still present (anchors on `before`) or already replaced by the NEW text (anchors on
+// `after`). Returns the node to scroll to, or null if the passage can't be located.
+function paintEditDiff(c){
+  const doc=document.getElementById('doc'); if(!doc) return null;
+  const p=editPair(c); if(!p) return null;
+  clearEditNodes();
+  const mkDel=()=>{ const d=document.createElement('del'); d.className='tc-stage'; return d; };
+  const mkIns=(t)=>{ const n=document.createElement('ins'); n.className='tc-stage'; if(t!=null) n.textContent=t; return n; };
+  // case A: old text still in the doc → wrap it as del, append the new as ins (insert op: before is empty → skip)
+  let rng=p.before ? findEditRange(doc, p.before) : null;
+  if(rng){
+    try{
+      const r=document.createRange(); r.setStart(rng.node, rng.start); r.setEnd(rng.node, rng.end);
+      if(p.after && p.after.replace(/\s+/g,' ').startsWith(p.before)){   // pure append
+        const ins=mkIns(p.after.slice(p.before.length)); r.collapse(false); r.insertNode(ins); return ins;
+      }
+      const del=mkDel(); r.surroundContents(del);
+      const ins=mkIns(p.after ? ' '+p.after : ''); del.after(ins); return p.after ? ins : del;   // delete op: del only
+    }catch(e){ /* range spans element boundaries — fall through */ }
+  }
+  // case B: old text gone (edit applied), or insert op with no before → anchor on the NEW text
+  rng=p.after ? findEditRange(doc, p.after) : null;
+  if(rng){
+    try{
+      const r=document.createRange(); r.setStart(rng.node, rng.start); r.setEnd(rng.node, rng.end);
+      const ins=mkIns(); r.surroundContents(ins);                       // highlight the new text in place
+      if(p.before){ const del=mkDel(); del.textContent=p.before+' '; ins.before(del); }
+      return ins;
+    }catch(e){ /* range spans element boundaries — fall through */ }
+  }
+  return null;
+}
+function jumpTo(c){ activeId=c.id;
+  if(editPair(c)){ const el=paintEditDiff(c); if(el){ scrollFlash(el); return; } }   // suggestion: paint the diff inline
+  clearEditNodes();                                                                   // plain comment: drop any stale diff
+  const el=locateAnchor(c);
   if(el) scrollFlash(el); else flash('Couldn’t find this passage — it may have changed since the comment.'); }
 function activateComment(id){ activeId=id; renderComments(); document.querySelector(`#comments .ccard[data-id="${id}"]`)?.scrollIntoView({behavior:'smooth',block:'center'}); }
 function paintHighlights(){ const doc=document.getElementById('doc'); if(!doc) return;

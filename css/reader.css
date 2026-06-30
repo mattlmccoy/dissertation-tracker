@@ -115,6 +115,9 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;pad
 .popover textarea.crepl{width:100%;border:.5px solid var(--suggest);border-radius:var(--r-sm);padding:8px 10px;font:inherit;background:var(--bg);color:var(--text);resize:vertical;min-height:44px;outline:none;margin-bottom:8px}
 #doc mark.cmark[data-sugg=delete]{background:var(--danger-bg);text-decoration:line-through;text-decoration-color:var(--danger)}
 #doc mark.cmark[data-sugg=replace],#doc mark.cmark[data-sugg=insert]{background:var(--success-bg);border-bottom:1.5px solid var(--success)}
+/* inline track-changes overlay for a suggested edit (struck-through old text + highlighted new text) */
+#doc ins.tc-stage{color:var(--success);background:var(--success-bg);text-decoration:none;border-radius:2px;padding:0 2px;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+#doc del.tc-stage{color:var(--danger);background:var(--danger-bg);text-decoration:line-through;border-radius:2px;padding:0 2px}
 .ccard .sugg{margin-top:7px;font-size:12.5px;line-height:1.5;border-left:2px solid var(--suggest);padding-left:9px}
 .ccard .sugg del{color:var(--danger);text-decoration:line-through} .ccard .sugg ins{color:var(--success);text-decoration:none;background:var(--success-bg);border-radius:2px;padding:0 2px}
 .ccard .sugg .op{font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--edit);font-weight:600;margin-bottom:3px;display:flex;align-items:center;gap:4px}
