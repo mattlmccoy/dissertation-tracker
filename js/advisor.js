@@ -299,11 +299,19 @@ function scrollFlash(el){ el.scrollIntoView({behavior:'smooth',block:'center'});
 // ---------- section navigator ----------
 function buildNav(){
   const nav=document.getElementById('nav'); const hs=[...document.querySelectorAll('#doc h2, #doc h3')];
-  nav.innerHTML=`<div class="lbl">SECTIONS</div>`;
+  review.read=review.read||{};   // advisor-private per-section read check-offs
+  const doneN=hs.filter((h,i)=>review.read[h.id||('sec-'+i)]).length;
+  nav.innerHTML=`<div class="lbl">SECTIONS<span style="margin-left:auto">${doneN}/${hs.length}</span></div>`;
   hs.forEach((h,i)=>{ if(!h.id) h.id='sec-'+i; const sub=h.tagName==='H3'; const cnt=review.comments.filter(c=>(c.anchor.section||'')===h.textContent.trim()).length;
+    const done=!!review.read[h.id];
     const a=document.createElement('a'); a.className=sub?'sub':''; a.dataset.sec=h.id;
-    a.innerHTML=`<span class="nav-t" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h.textContent}</span>${cnt?`<span class="count">${cnt}</span>`:''}`;
-    a.onclick=()=>h.scrollIntoView({behavior:'smooth',block:'start'}); nav.appendChild(a); });
+    a.innerHTML=`<button class="chk${done?' on':''}" title="Mark section read"><i class="ti ti-${done?'circle-check-filled':'circle'}"></i></button>
+      <span class="nav-t" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap${done?';color:var(--text-3)':''}">${h.textContent}</span>${cnt?`<span class="count">${cnt}</span>`:''}`;
+    a.querySelector('.nav-t').onclick=()=>h.scrollIntoView({behavior:'smooth',block:'start'});
+    a.querySelector('.chk').onclick=e=>{ e.stopPropagation();
+      if(review.read[h.id]) delete review.read[h.id]; else review.read[h.id]=true;
+      markDirty(); buildNav(); };
+    nav.appendChild(a); });
   read.onscroll=()=>{ let cur=null; hs.forEach(h=>{ if(h.getBoundingClientRect().top<140) cur=h.id; }); nav.querySelectorAll('a').forEach(a=>a.classList.toggle('active',a.dataset.sec===cur)); review.cursor={sec:cur}; clearTimeout(scrollT); scrollT=setTimeout(save,900); };
   read.onscroll();
 }
