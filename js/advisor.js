@@ -436,12 +436,14 @@ function renderTopbar(){ const m=chMeta(current);
     <div style="margin-left:auto;display:flex;align-items:center;gap:3px">
       <button class="icbtn" id="btn-theme" title="Theme"><i class="ti ti-moon"></i></button>
       <button class="btn btn-primary" id="btn-submit"><i class="ti ti-send"></i>Submit comments</button>
+      <button class="icbtn" id="btn-export" title="Download this chapter (Word · Markdown · PDF)"><i class="ti ti-file-export"></i></button>
       <button class="icbtn" id="btn-key" title="Access key"><i class="ti ti-key"></i></button>
     </div>`;
   document.getElementById('btn-home').onclick=enterHome;
   document.getElementById('chsel').onclick=openChapterMenu;
   document.getElementById('btn-theme').onclick=()=>{ document.documentElement.classList.toggle('dark'); localStorage.setItem('theme',document.documentElement.classList.contains('dark')?'dark':'light'); };
   document.getElementById('btn-submit').onclick=submitComments;
+  document.getElementById('btn-export').onclick=()=>exportDialog(current);
   document.getElementById('btn-key').onclick=()=>{ const v=prompt('Access key:',tok()||''); if(v!==null){ if(v.trim()) localStorage.setItem('ghpat',v.trim()); else localStorage.removeItem('ghpat'); boot(); } };
   const si=document.getElementById('search'); si.addEventListener('keydown',e=>{ if(e.key==='Enter') runSearch(si.value); if(e.key==='Escape'){ si.value=''; clearSearch(); } });
 }
@@ -489,10 +491,11 @@ function enterHome(){
         <div style="font-size:11.5px;color:var(--text-2)">See how the author addressed each comment you submitted.</div></div>
         <span style="margin-left:auto;color:var(--text-2)"><i class="ti ti-chevron-right" style="vertical-align:-2px"></i></span></button>` : ''}
       <div style="font-size:11px;letter-spacing:.06em;color:var(--text-3);margin-bottom:13px">CHAPTERS FOR REVIEW</div>
-      ${list.length?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px">${cards}</div>`:`<div class="empty">No chapters have been released for your review yet. You'll see them here once they're shared.</div>`}</div>`;
+      ${list.length?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px">${cards}</div>`:`<div class="empty">No chapters have been released for your review yet. You'll see them here once they're shared.</div>`}<div id="adv-downloads"></div></div>`;
   read.querySelectorAll('[data-ch]').forEach(el=>el.onclick=()=>loadChapter(el.dataset.ch));
   document.getElementById('outline-card').onclick=loadOutline;
   document.getElementById('responses-card')?.addEventListener('click', loadResponses);
+  renderAdvisorDownloads();
 }
 // ---------- responses to your comments (read-only; gated by the owner's release toggle) ----------
 async function loadResponses(){
@@ -679,6 +682,90 @@ function runSearch(q){ clearSearch(); if(!q.trim()) return; const re=new RegExp(
   document.querySelectorAll('#doc p').forEach(p=>{ if(re.test(p.textContent)){ p.innerHTML=p.innerHTML.replace(re,m=>`<mark style="background:var(--warn-bg)">${m}</mark>`); if(!first) first=p; } }); if(first) first.scrollIntoView({behavior:'smooth',block:'center'}); }
 function clearSearch(){ document.querySelectorAll('#doc mark:not(.cmark)').forEach(m=>m.replaceWith(...m.childNodes)); }
 function flash(msg, ms=2600){ const t=document.createElement('div'); t.textContent=msg; t.style.cssText='position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:9px 16px;border-radius:20px;font-size:13px;z-index:60;box-shadow:0 6px 20px rgba(0,0,0,.2);max-width:88vw;text-align:center'; document.body.appendChild(t); setTimeout(()=>t.remove(),ms); }
+
+// ---------- download a chapter as Word / Markdown / PDF, with your comments ----------
+// Mirrors the owner reviewer's export: queue a build job, the cloud pipeline (pandoc +
+// LaTeX) produces the files, and they appear under Downloads on the home screen.
+const _EXP_FMT = { docx:'Word', pdf:'PDF', md:'Markdown' };
+const _expOpen = new Set();
+function exportDialog(scope){
+  document.getElementById('expdlg')?.remove();
+  const m = chMeta(scope);
+  const title = scope==='__outline__' ? 'the proposed outline' : `Chapter ${m.n} · ${shortTitle(m.title)}`;
+  const back=document.createElement('div'); back.id='expdlg';
+  back.style.cssText='position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.34);display:flex;align-items:center;justify-content:center';
+  back.innerHTML=`<div style="background:var(--bg);border:.5px solid var(--border-2);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.28);width:min(440px,92vw);padding:20px 22px">
+      <div style="font-size:16px;font-weight:600;margin-bottom:3px">Download ${escapeHtml(title)}</div>
+      <div style="font-size:12.5px;color:var(--text-3);margin-bottom:14px">Built in the cloud with your comments included. It appears under Downloads on the home screen when ready, usually within a few minutes.</div>
+      <div style="font-size:11px;letter-spacing:.05em;color:var(--text-3);margin-bottom:6px">FORMATS</div>
+      <label style="display:flex;gap:8px;align-items:center;padding:5px 0;font-size:13px"><input type="checkbox" class="exp-fmt" value="docx" checked> Word (.docx), with your comments</label>
+      <label style="display:flex;gap:8px;align-items:center;padding:5px 0;font-size:13px"><input type="checkbox" class="exp-fmt" value="md" checked> Markdown</label>
+      <label style="display:flex;gap:8px;align-items:center;padding:5px 0;font-size:13px"><input type="checkbox" class="exp-fmt" value="pdf"> PDF <span style="color:var(--text-3)">(slower to build)</span></label>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">
+        <button class="btn" id="exp-cancel">Cancel</button>
+        <button class="btn btn-primary" id="exp-go"><i class="ti ti-file-export"></i>Download</button></div>
+      <div id="exp-stat" style="font-size:12px;color:var(--text-3);margin-top:8px"></div></div>`;
+  document.body.appendChild(back);
+  back.onclick=e=>{ if(e.target===back) back.remove(); };
+  back.querySelector('#exp-cancel').onclick=()=>back.remove();
+  const stat=back.querySelector('#exp-stat');
+  back.querySelector('#exp-go').onclick=async()=>{
+    const formats=[...back.querySelectorAll('.exp-fmt:checked')].map(x=>x.value);
+    if(!formats.length){ stat.textContent='Pick at least one format.'; return; }
+    stat.textContent='Requesting…';
+    try{ await queueExport(scope, formats);
+      stat.textContent='Requested. Check Downloads on the home screen in a few minutes.';
+      setTimeout(()=>back.remove(),1800); }
+    catch(e){ stat.textContent='Failed: '+e.message; }
+  };
+}
+async function queueExport(scope, formats){
+  const t=tok(); if(!t) throw new Error('add your access key first');
+  const { json, sha } = await getJson(t,'jobs.json').catch(()=>({json:null,sha:null}));
+  const jobs = Array.isArray(json)?json:[];
+  jobs.push({ id:'j_'+Date.now().toString(36), type:'export', chapter:scope, formats,
+    opts:{ resolved:true, reviewers:[effId()] }, status:'queued',
+    requested_ts:new Date().toISOString(), requested_by:effId() });
+  await putJson(t,'jobs.json',jobs,sha,`export: ${effId()} ${scope} (${formats.join(',')})`);
+}
+async function listExports(){
+  const t=tok(); if(!t) return [];
+  const { json } = await getJson(t,'jobs.json').catch(()=>({json:null}));
+  return (Array.isArray(json)?json:[]).filter(j=>j.type==='export' && j.requested_by===effId())
+    .sort((a,b)=>(b.requested_ts||'').localeCompare(a.requested_ts||''));
+}
+async function renderAdvisorDownloads(){
+  const box=document.getElementById('adv-downloads'); if(!box) return;
+  const jobs=await listExports();
+  if(!jobs.length){ box.innerHTML=''; return; }
+  const groups={}; for(const j of jobs){ (groups[j.chapter] ||= []).push(j); }
+  box.innerHTML=`<div style="font-size:11px;letter-spacing:.06em;color:var(--text-3);margin:24px 0 13px">DOWNLOADS</div>`+Object.keys(groups).map(scope=>{
+    const list=groups[scope]; const m=chMeta(scope);
+    const name=scope==='__outline__'?'Proposed outline':`Chapter ${m.n} · ${shortTitle(m.title)}`;
+    const pending=list.filter(j=>j.status!=='done').length; const open=_expOpen.has(scope);
+    const versions=list.map(j=>{
+      const when=j.done_ts?fmtDate(j.done_ts):(j.requested_ts?fmtDate(j.requested_ts):'');
+      if(j.status!=='done') return `<div style="padding:7px 0;font-size:11.5px;color:var(--text-3)"><i class="ti ti-clock"></i> ${when} · building, check back soon</div>`;
+      const dls=(j.artifacts||[]).map(art=>`<button class="btn dl-get" data-path="${escapeHtml(art.path)}" style="padding:3px 9px;font-size:11.5px"><i class="ti ti-download"></i>${_EXP_FMT[art.fmt]||art.fmt}</button>`).join(' ');
+      return `<div style="padding:7px 0;border-top:.5px solid var(--border)"><div style="font-size:11.5px;color:var(--text-3)">${when}</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">${dls||'<span style="font-size:11.5px;color:var(--text-3)">no files</span>'}</div></div>`;
+    }).join('');
+    return `<div style="border:.5px solid var(--border);border-radius:10px;padding:4px 12px 6px;margin-bottom:10px"><button class="dl-grp-h" data-scope="${escapeHtml(scope)}" style="display:flex;align-items:center;gap:7px;width:100%;background:none;border:none;cursor:pointer;font:inherit;color:var(--text);padding:8px 0"><i class="ti ti-chevron-${open?'down':'right'}"></i><span style="font-size:13px">${name}</span><span style="margin-left:auto;color:var(--text-3);font-size:11.5px">${list.length} version${list.length>1?'s':''}${pending?` · ${pending} building`:''}</span></button><div style="display:${open?'block':'none'}">${versions}</div></div>`;
+  }).join('');
+  box.querySelectorAll('.dl-grp-h').forEach(h=>h.onclick=()=>{ const s=h.dataset.scope; _expOpen.has(s)?_expOpen.delete(s):_expOpen.add(s); renderAdvisorDownloads(); });
+  box.querySelectorAll('.dl-get').forEach(b=>b.onclick=()=>downloadArtifact(b.dataset.path));
+}
+async function downloadArtifact(path){
+  const t=tok(); if(!t){ flash('Add your access key first.'); return; }
+  flash('Fetching…');
+  try{ const url=`https://api.github.com/repos/${DATA_REPO}/contents/${path}?t=${Date.now()}`;
+    const r=await fetch(url,{ headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' });
+    if(!r.ok) throw new Error('GitHub '+r.status);
+    const blob=await r.blob();
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=path.split('/').pop(); document.body.appendChild(a); a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1000);
+    flash('Saved ✓');
+  }catch(e){ flash('Download failed: '+e.message); }
+}
 
 // ---------- mobile: comments rail as a bottom sheet ----------
 function setupMobileSheet(){
