@@ -345,7 +345,7 @@ function threadHtml(c){ return (c.thread||[]).map(m=>`<div class="resp-fup" styl
 function seenHtml(c){ return c.read?`<div class="seen"><i class="ti ti-check" style="font-size:11px"></i> Seen by the author</div>`:''; }
 // a comment leaves the active rail once the author has addressed it (recorded a
 // resolution) or it has been resolved here — it folds into the collapsed Resolved group.
-const _isArchived = c => !!c.resolution || c.status==='resolved' || c.advisor_state==='resolved';
+const _isArchived = c => !c.reopened && (!!c.resolution || c.status==='resolved' || c.advisor_state==='resolved');
 function _buildCard(c){
   const card=document.createElement('div'); card.className='ccard'; card.dataset.id=c.id;
   if(editingId===c.id){ card.appendChild(editCard(c)); return card; }
@@ -540,8 +540,8 @@ function renderResponses(groups){
       </div>`;
   };
   const head=g=>g.ch==='__outline__'?'Proposed outline':`Chapter ${chMeta(g.ch).n} · ${escapeHtml(shortTitle(chMeta(g.ch).title))}`;
-  const activeSecs=groups.map(g=>{ const cs=(g.comments||[]).filter(c=>c.advisor_state!=='resolved'); return cs.length?`<div class="resp-sec"><div class="resp-ch">${head(g)}</div>${cs.map(c=>item(c,g.ch)).join('')}</div>`:''; }).join('');
-  const resolved=groups.flatMap(g=>(g.comments||[]).filter(c=>c.advisor_state==='resolved').map(c=>({c,ch:g.ch})));
+  const activeSecs=groups.map(g=>{ const cs=(g.comments||[]).filter(c=>!_isArchived(c)); return cs.length?`<div class="resp-sec"><div class="resp-ch">${head(g)}</div>${cs.map(c=>item(c,g.ch)).join('')}</div>`:''; }).join('');
+  const resolved=groups.flatMap(g=>(g.comments||[]).filter(c=>_isArchived(c)).map(c=>({c,ch:g.ch})));
   const resolvedHtml=resolved.length?`<div class="resp-resolved-grp"><button class="resp-resolved-head"><i class="ti ti-chevron-${_respResolvedOpen?'down':'right'}"></i><span>Resolved</span><span class="rcount">${resolved.length}</span></button><div class="resp-resolved-body" style="display:${_respResolvedOpen?'block':'none'}">${resolved.map(r=>item(r.c,r.ch)).join('')}</div></div>`:'';
   read.innerHTML=`<div class="resp-wrap"><h1 class="ol-h1">Responses to your comments</h1>${activeSecs||`<div class="empty" style="margin:8vh auto">You've cleared all your open responses${resolved.length?' — see Resolved below':''}.</div>`}${resolvedHtml}</div>`;
   read.querySelectorAll('.resp-item').forEach(el=>{
