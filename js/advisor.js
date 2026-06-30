@@ -74,7 +74,7 @@ const CHAPTERS = [
   { id:'ch_conclusions',  n:9, title:'Conclusions' },
 ];
 const chMeta = id => CHAPTERS.find(c => c.id === id) || (id === '__outline__' ? { n:'·', title:'Proposed outline' } : { n:'?', title:id });
-const TAGS = ['suggestion','wording','question','clarity','citation'];
+const TAGS = ['suggestion','wording','figure','question','clarity','citation'];
 const shortTitle = t => { const s = t.split(':')[0].trim(); return s.length <= 34 ? s : s.slice(0,34).replace(/\s\S*$/,'') + '…'; };
 const escapeHtml = s => (s||'').replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
 // platform-adaptive modifier label (handlers accept ⌘ or Ctrl; this is just the on-screen text)
@@ -280,7 +280,7 @@ function figureLabel(fig){ const cap=fig.querySelector('figcaption')?.textConten
 function wireFigures(doc){ doc.querySelectorAll('figure, img').forEach(el=>{ const fig=el.tagName==='FIGURE'?el:(el.closest('figure')||el); if(fig.dataset.figWired) return; fig.dataset.figWired='1'; fig.classList.add('fig-commentable');
   fig.addEventListener('click',e=>{ if(window.getSelection().toString().trim()) return; e.stopPropagation(); document.getElementById('pop')?.remove(); const info=figureLabel(fig);
     const rr=read.getBoundingClientRect(), fr=fig.getBoundingClientRect(); const rects=[{x:fr.x-rr.x,y:fr.y-rr.y+read.scrollTop,w:fr.width,h:fr.height}];
-    pending={ quote: info.label?`${info.label}${info.quote?': '+info.quote:''}`:(info.quote||'Figure'), kind:'figure', figure:info.id, section:headingFor(fig), confirmed:true, rects:[] }; showPopover(pending,rects,'suggestion',fig); }); });
+    pending={ quote: info.label?`${info.label}${info.quote?': '+info.quote:''}`:(info.quote||'Figure'), kind:'figure', figure:info.id, section:headingFor(fig), confirmed:true, rects:[] }; showPopover(pending,rects,'figure',fig); }); });
   // tables and display equations are commentable too (no drawing — they carry no raster image)
   doc.querySelectorAll('table, .katex-display').forEach(el=>{ if(el.dataset.blkWired) return; if(el.closest('figure')?.dataset.figWired) return; el.dataset.blkWired='1'; el.classList.add('blk-commentable');
     el.addEventListener('click',e=>{ if(window.getSelection().toString().trim()) return; e.stopPropagation(); document.getElementById('pop')?.remove();
@@ -288,7 +288,7 @@ function wireFigures(doc){ doc.querySelectorAll('figure, img').forEach(el=>{ con
       if(isTable){ const cap=el.querySelector('caption')?.textContent.trim()||el.closest('figure')?.querySelector('figcaption')?.textContent.trim()||''; const m=cap.match(/^\s*Table\s+[\d.]+/i); label=m?m[0].trim():'Table'; quote=cap.slice(0,150)||'Table'; }
       else { const num=(el.querySelector('.tag, .eqn-num')?.textContent||'').replace(/[()]/g,'').trim(); label=num?`Equation (${num})`:'Equation'; quote=(el.textContent||'').replace(/\s+/g,' ').trim().slice(0,120)||'Equation'; }
       const rr=read.getBoundingClientRect(), fr=el.getBoundingClientRect(); const rects=[{x:fr.x-rr.x,y:fr.y-rr.y+read.scrollTop,w:fr.width,h:fr.height}];
-      pending={ quote: label?`${label}: ${quote}`:quote, kind:'figure', figure:label, section:headingFor(el), confirmed:true, rects:[] }; showPopover(pending,rects,'suggestion'); }); }); }
+      pending={ quote: label?`${label}: ${quote}`:quote, kind:'figure', figure:label, section:headingFor(el), confirmed:true, rects:[] }; showPopover(pending,rects,'figure'); }); }); }
 const chapterByNum = n => CHAPTERS.find(c=>c.n===n);
 function sectionNumberMap(doc){ const n=chMeta(current).n; const map={}; let h2=0,h3=0; doc.querySelectorAll('h2, h3').forEach(h=>{ if(h.tagName==='H2'){h2++;h3=0;map[`${n}.${h2}`]=h;} else {h3++;map[`${n}.${h2}.${h3}`]=h;} }); return map; }
 function figTableMaps(doc){ const fig={},tab={}; doc.querySelectorAll('figure').forEach(f=>{ const m=(f.querySelector(':scope > figcaption')?.textContent||'').match(/^\s*Figure\s+(\d+(?:\.\d+)*)\./); if(m) fig[m[1]]=f; });
@@ -348,14 +348,14 @@ function showPopover(anchor,rects,defaultTag='wording',figEl=null){
     <div class="snip" id="psnip">"${escapeHtml(anchor.quote.slice(0,150))}"</div>${modes}
     ${isFig&&figEl?`<button class="btn figdraw-btn" id="figdraw"><i class="ti ti-pencil"></i>Draw on the figure</button>`:''}
     <textarea id="crepl" class="crepl" style="display:none"></textarea><div class="tags" id="tags"></div>
-    <textarea id="cbody" placeholder="Leave a comment…  (⌥1–5 to tag · ${MOD}↵ to save)"></textarea>
+    <textarea id="cbody" placeholder="Leave a comment…  (⌥1–6 to tag · ${MOD}↵ to save)"></textarea>
     <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-primary" id="csave">Comment</button><button class="btn" id="ccancel">Cancel</button></div>`;
   read.appendChild(pop);
   let tag=defaultTag, mode='note'; const tr=pop.querySelector('#tags');
   TAGS.forEach(t=>{ const b=document.createElement('button'); b.textContent=t; const pick=()=>{ tag=t; [...tr.children].forEach(x=>{x.className='';x.style.background='transparent';x.style.color='var(--text-2)';x.style.borderColor='var(--border)';}); b.className='on'; b.style.background='var(--accent-bg)'; b.style.color='var(--accent)'; b.style.borderColor='transparent'; }; b.onclick=pick; tr.appendChild(b); if(t===defaultTag) pick(); });
   const repl=pop.querySelector('#crepl'), body=pop.querySelector('#cbody'), saveBtn=pop.querySelector('#csave');
   const setMode=m=>{ mode=m; pop.querySelectorAll('#pmodes button').forEach(b=>b.classList.toggle('on',b.dataset.m===m)); const nr=m==='replace'||m==='insert'; repl.style.display=nr?'block':'none';
-    repl.placeholder=m==='replace'?'Exact replacement text (verbatim)…':'Exact text to insert after the selection (verbatim)…'; body.placeholder=m==='note'?`Leave a comment…  (⌥1–5 to tag · ${MOD}↵ to save)`:'Optional note for this edit…';
+    repl.placeholder=m==='replace'?'Exact replacement text (verbatim)…':'Exact text to insert after the selection (verbatim)…'; body.placeholder=m==='note'?`Leave a comment…  (⌥1–6 to tag · ${MOD}↵ to save)`:'Optional note for this edit…';
     saveBtn.textContent=m==='note'?'Comment':m==='delete'?'Suggest deletion':m==='insert'?'Suggest insertion':'Suggest replacement'; saveBtn.className='btn '+(m==='delete'?'btn-danger':m==='note'?'btn-primary':'btn-suggest');
     pop.querySelector('#psnip').style.textDecoration=m==='delete'?'line-through':'none'; (nr?repl:body).focus(); };
   pop.querySelectorAll('#pmodes button').forEach(b=>b.onclick=()=>setMode(b.dataset.m)); body.focus();
@@ -1065,7 +1065,7 @@ function cycleComment(dir){
   let i=list.findIndex(c=>c.id===activeId);
   i = i<0 ? (dir>0?0:list.length-1) : (i+dir+list.length)%list.length;
   const c=list[i]; jumpTo(c); activateComment(c.id); }
-const SHORTCUTS=[['j / k','next / previous comment'],['↵ on a comment','jump to its place in the text'],['f','focus (distraction-free) mode'],['[ / ]','collapse left nav / comments rail'],['/','search this chapter'],['Esc','close popover / overlay'],[`${MOD}↵ (in popover)`,'save the comment'],['⌥1–5 (in popover)','pick a tag'],['?','show this help']];
+const SHORTCUTS=[['j / k','next / previous comment'],['↵ on a comment','jump to its place in the text'],['f','focus (distraction-free) mode'],['[ / ]','collapse left nav / comments rail'],['/','search this chapter'],['Esc','close popover / overlay'],[`${MOD}↵ (in popover)`,'save the comment'],['⌥1–6 (in popover)','pick a tag'],['?','show this help']];
 function toggleHelp(){
   const ex=document.getElementById('helpov'); if(ex){ ex.remove(); return; }
   const ov=document.createElement('div'); ov.id='helpov';
@@ -1081,7 +1081,7 @@ window.addEventListener('keydown',e=>{
   if(pop){
     if(e.key==='Escape'){ pop.querySelector('#ccancel').click(); return; }
     if((e.metaKey||e.ctrlKey)&&e.key==='Enter'){ e.preventDefault(); pop._commit(); return; }
-    if(e.altKey&&e.key>='1'&&e.key<='5'){ e.preventDefault(); pop._pickTag(+e.key-1); return; }
+    if(e.altKey&&e.key>='1'&&e.key<='6'){ e.preventDefault(); pop._pickTag(+e.key-1); return; }
     return;
   }
   if(document.getElementById('helpov')&&e.key==='Escape'){ toggleHelp(); return; }
