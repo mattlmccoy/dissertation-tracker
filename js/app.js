@@ -1127,6 +1127,13 @@ function markFigure(doc, c){
   if (fig){ fig.classList.add('cmark-fig'); fig.dataset.cid = c.id; fig.style.setProperty('--mk', `var(--${c.tag})`); }
 }
 const escapeHtml = s => (s||'').replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
+// ---------- advisor registry + invite helpers ----------
+const portalBase = () => location.origin + location.pathname.replace(/[^/]*$/, '');
+const advisorUrl = (id, name) => `${portalBase()}advisor.html?a=${encodeURIComponent(id)}&n=${encodeURIComponent(name||'')}`;
+const slugify = s => (s||'').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,32) || 'advisor';
+const rand4 = () => Math.random().toString(36).slice(2,6);
+async function loadAdvisorsRegistry(t){ const { json, sha } = await getJson(t, 'advisors.json').catch(() => ({ json:null, sha:null }));
+  const reg = json && Array.isArray(json.advisors) ? json : { advisors: [] }; return { reg, sha }; }
 const fmtDate = ts => { if(!ts) return ''; const d=new Date(ts); if(isNaN(d)) return ''; return d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); };
 function suggHtml(c){
   if (!c.edit) return '';
@@ -1729,6 +1736,7 @@ async function openReleasePanel(){
   if (!rel.general) rel.general = { name:'General reviewers', released:[] };   // shared lab-reviewer gate
   const advs = Object.keys(rel).filter(k => k !== '_comment');                 // gating rows + portal links
   const base = location.origin + location.pathname.replace(/[^/]+$/, '');
+  const { reg: advReg, sha: advSha } = await loadAdvisorsRegistry(t);
   // discover every reviewer comment file (named advisors AND per-person lab reviewers) via the tree
   const inbox = {};   // inbox[fileId] = [{chapter, comment}]
   let advFilePaths = [];
@@ -1759,6 +1767,16 @@ async function openReleasePanel(){
       items.length ? items.map(({chapter, c}) => cmtRow(a, chapter, c)).join('') : `<div style="font-size:12.5px;color:var(--text-3);padding:6px 2px">No comments submitted yet.</div>` }</div>`;
   }).join('');
   document.getElementById('rel-body').innerHTML = `
+    <div class="rel-sec">Advisors</div>
+    <div style="font-size:12px;color:var(--text-3);margin-bottom:10px">Add a reviewer to create their portal and (with an email) send them an invite with their link + access key. The access key can read released chapters and write only review comments — keep it private.</div>
+    <div class="advadd" style="display:grid;grid-template-columns:1fr 1fr 140px auto;gap:8px;align-items:center;margin-bottom:12px">
+      <input id="adv-name" placeholder="Full name" style="font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);outline:none">
+      <input id="adv-email" type="email" placeholder="Email (to send the invite)" style="font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);outline:none">
+      <input id="adv-title" placeholder="Title (optional)" style="font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);outline:none">
+      <button class="btn btn-primary" id="adv-add"><i class="ti ti-user-plus"></i>Add</button>
+    </div>
+    <div id="adv-list"></div>
+    <div id="adv-stat" style="font-size:12px;color:var(--text-3);margin:6px 0 18px"></div>
     <div class="rel-sec">Which chapters each advisor can see</div>
     <table class="rel-tbl"><thead><tr><th>Chapter</th>${advs.map(a => `<th>${escapeHtml(a)}<div style="font-weight:400;font-size:10px;color:var(--text-3)">${escapeHtml(rel[a].name||a)}</div></th>`).join('')}</tr></thead><tbody>${rows}<tr style="border-top:2px solid var(--border-2)"><td>Release responses<div style="font-weight:400;font-size:10px;color:var(--text-3)">let them see how you addressed their comments</div></td>${advs.map(a => `<td style="text-align:center"><input type="checkbox" data-resp="${a}" ${rel[a].responses_released?'checked':''}></td>`).join('')}</tr></tbody></table>
     <div style="display:flex;gap:8px;margin:14px 0 6px;align-items:center"><button class="btn btn-primary" id="rel-save">Save &amp; publish</button><span id="rel-stat" style="font-size:12px;color:var(--text-3)"></span></div>
@@ -1802,6 +1820,55 @@ async function openReleasePanel(){
       catch(err){ alert('Failed: ' + err.message); e.target.checked = !v; }
     };
   });
+  const renderAdvList = () => {
+    const box = document.getElementById('adv-list'); if (!box) return;
+    if (!advReg.advisors.length){ box.innerHTML = `<div style="font-size:12.5px;color:var(--text-3)">No added advisors yet.</div>`; return; }
+    box.innerHTML = advReg.advisors.map(a => {
+      const status = a.invited ? `<span class="chip" style="background:var(--success-bg);color:var(--success)">invited${a.invited_ts?` · ${fmtDate(a.invited_ts)}`:''}</span>`
+        : a.invite_error ? `<span class="chip" style="background:var(--warn-bg);color:var(--warn)" title="${escapeHtml(a.invite_error)}">invite failed</span>`
+        : a.email ? `<span class="chip" style="background:var(--warn-bg);color:var(--warn)">invite pending</span>`
+        : `<span class="chip">no email</span>`;
+      return `<div class="advrow" data-id="${escapeHtml(a.id)}" style="display:flex;align-items:center;gap:9px;padding:7px 0;border-top:.5px solid var(--border)">
+          <div style="min-width:0"><div style="font-size:13px;font-weight:500">${escapeHtml(a.name)}${a.title?` <span style="color:var(--text-3);font-weight:400">· ${escapeHtml(a.title)}</span>`:''}</div>
+            <div style="font-size:11.5px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(a.email||'')}</div></div>
+          <span style="margin-left:auto"></span>${status}
+          <button class="btn adv-copy" data-id="${escapeHtml(a.id)}" style="padding:3px 9px;font-size:11.5px"><i class="ti ti-link"></i>Copy link</button>
+          ${a.email?`<button class="btn adv-resend" data-id="${escapeHtml(a.id)}" style="padding:3px 9px;font-size:11.5px"><i class="ti ti-mail-forward"></i>Resend</button>`:''}</div>`;
+    }).join('');
+    box.querySelectorAll('.adv-copy').forEach(b => b.onclick = () => { const a = advReg.advisors.find(x=>x.id===b.dataset.id);
+      navigator.clipboard?.writeText(advisorUrl(a.id, a.name)); flash('Portal link copied.'); });
+    box.querySelectorAll('.adv-resend').forEach(b => b.onclick = () => resendInvite(b.dataset.id));
+  };
+  const persistAdvisors = async (msg) => { await putJson(t, 'advisors.json', advReg, advSha, msg); };
+  const addAdvisor = async () => {
+    const name = document.getElementById('adv-name').value.trim();
+    const email = document.getElementById('adv-email').value.trim();
+    const title = document.getElementById('adv-title').value.trim();
+    const stat = document.getElementById('adv-stat');
+    if (!name){ stat.textContent = 'Name is required.'; return; }
+    const id = `${slugify(name)}-${rand4()}`;
+    advReg.advisors.push({ id, name, email, title, added_ts:new Date().toISOString(), invited:false, invited_ts:null, invite_error:null });
+    stat.textContent = 'Saving…';
+    try {
+      await persistAdvisors(`advisors: add ${name}`);
+      const { json:relNow, sha:relSha } = await getJson(t, 'release.json');
+      relNow[id] = { name, released: [], responses_released: false };
+      await putJson(t, 'release.json', relNow, relSha, `release: register ${name}`);
+      stat.innerHTML = email
+        ? `Added. Invite will send shortly. Portal: <code>${escapeHtml(advisorUrl(id, name))}</code>`
+        : `Added (no email — share this portal link yourself): <code>${escapeHtml(advisorUrl(id, name))}</code>`;
+      document.getElementById('adv-name').value = document.getElementById('adv-email').value = document.getElementById('adv-title').value = '';
+      renderAdvList();
+    } catch(e){ stat.textContent = 'Failed: ' + e.message; advReg.advisors.pop(); }
+  };
+  const resendInvite = async (id) => {
+    const a = advReg.advisors.find(x=>x.id===id); if (!a) return;
+    a.invited = false; a.invited_ts = null; a.invite_error = null;
+    try { await persistAdvisors(`advisors: resend invite ${a.name}`); flash('Invite re-queued — it will send shortly.'); renderAdvList(); }
+    catch(e){ flash('Failed: ' + e.message); }
+  };
+  document.getElementById('adv-add').onclick = addAdvisor;
+  renderAdvList();
   document.getElementById('rel-save').onclick = async () => {
     advs.forEach(a => { rel[a].released = [...document.querySelectorAll(`input[data-a="${a}"]:checked`)].map(x => x.dataset.ch);
       rel[a].responses_released = !!document.querySelector(`input[data-resp="${a}"]`)?.checked; });
