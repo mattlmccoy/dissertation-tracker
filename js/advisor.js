@@ -103,7 +103,7 @@ const save = () => localStorage.setItem(localKey(current), JSON.stringify(review
 if (localStorage.getItem('theme') === 'dark') document.documentElement.classList.add('dark');
 
 // ---------- sync (this reviewer's own comment file only) ----------
-let reviewSha = null, syncTimer = null;
+let reviewSha = null, syncTimer = null, bannerTimer = null;
 async function syncDown(){ const t = tok(); if (!t) return;
   try { const { json, sha } = await getJson(t, reviewPath(current)); reviewSha = sha;
     if (json){ const rById = Object.fromEntries((json.comments||[]).map(c=>[c.id,c]));
@@ -116,7 +116,9 @@ async function syncDown(){ const t = tok(); if (!t) return;
       save(); renderComments(); if (document.getElementById('doc')) paintHighlights(); } }
   catch(e){ /* first time / offline */ } }
 // a local mutation isn't safe until confirmed on GitHub — flag it, persist, and schedule a push
-function markDirty(){ review.pending = true; save(); syncUpSoon(); renderBanner(); }
+// don't flash the "unsaved" warning during the normal in-flight sync window; only surface it
+// if a save is still unconfirmed after a grace period. syncUp clears/raises it on confirm/fail.
+function markDirty(){ review.pending = true; save(); syncUpSoon(); clearTimeout(bannerTimer); bannerTimer = setTimeout(renderBanner, 4000); }
 function syncUpSoon(){ if (!tok()) return; clearTimeout(syncTimer); syncTimer = setTimeout(() => syncUp(), 1200); }
 // read-modify-merge push: returns true only when GitHub confirms (2xx). Never clobbers owner edits.
 async function syncUp(){ const t = tok(); if (!t) return false;
