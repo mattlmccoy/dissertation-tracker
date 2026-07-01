@@ -1796,7 +1796,14 @@ async function openReleasePanel(){
     <div class="rel-sec">Which chapters each advisor can see</div>
     <table class="rel-tbl"><thead><tr><th>Chapter</th>${advs.map(a => `<th>${escapeHtml(a)}<div style="font-weight:400;font-size:10px;color:var(--text-3)">${escapeHtml(rel[a].name||a)}</div></th>`).join('')}</tr></thead><tbody>${rows}<tr style="border-top:2px solid var(--border-2)"><td>Release responses<div style="font-weight:400;font-size:10px;color:var(--text-3)">let them see how you addressed their comments</div></td>${advs.map(a => `<td style="text-align:center"><input type="checkbox" data-resp="${a}" ${rel[a].responses_released?'checked':''}></td>`).join('')}</tr></tbody></table>
     <div style="display:flex;gap:8px;margin:14px 0 6px;align-items:center"><button class="btn btn-primary" id="rel-save">Save &amp; publish</button><span id="rel-stat" style="font-size:12px;color:var(--text-3)"></span></div>
-    <div class="rel-links">${advs.map(a => `<div><b>${escapeHtml(rel[a].name||a)}</b> → <code>${escapeHtml(base + (a==='general'?'review-lab.html':a+'.html'))}</code></div>`).join('')}</div>
+    <div class="rel-links">${advs.map(a => {
+        // Legacy committee members have dedicated pages; the shared lab pool uses review-lab.html;
+        // everyone added through the Advisors feature uses the generic advisor.html?a=<id> portal.
+        const url = a === 'general' ? base + 'review-lab.html'
+          : (a === 'CJS' || a === 'CCS') ? base + a + '.html'
+          : advisorUrl(a, rel[a].name);
+        return `<div><b>${escapeHtml(rel[a].name||a)}</b> → <code>${escapeHtml(url)}</code></div>`;
+      }).join('')}</div>
     <div class="rel-sec" style="margin-top:26px">Comments received from advisors</div>${inboxHtml}`;
   const refresh = () => openReleasePanel();
   // panel is overview-only: read-gate + batch send + open-in-context. All in-place (no full re-fetch).
@@ -2084,12 +2091,12 @@ gh variable set PORTAL_BASE --repo ${dataRepo}</pre>
     if (!pk){ stat.innerHTML = 'That GitHub token is missing <b>Secrets</b> or <b>Actions</b> access — go Back and regenerate it with the <b>repo</b> box ticked.'; return; }
     try {
       stat.textContent = 'Saving credentials…';
-      const key = genKey();
+      // NOTE: do NOT touch ADVISOR_KEY here — that's the advisors' access token, a separate concern
+      // from email. Overwriting it with a random string broke advisor sign-in on every email connect.
       await putSecret(etok, pk, sealToBase64, 'SMTP_USER', user);
       await putSecret(etok, pk, sealToBase64, 'SMTP_PASS', pass);
       await putSecret(etok, pk, sealToBase64, 'SMTP_HOST', host);
       await putSecret(etok, pk, sealToBase64, 'SMTP_PORT', port);
-      await putSecret(etok, pk, sealToBase64, 'ADVISOR_KEY', key);
       await putSecret(etok, pk, sealToBase64, 'SMTP_FROM', (S.from || user).trim());   // sender ≠ login for Brevo
       if (name) await putSecret(etok, pk, sealToBase64, 'SMTP_FROM_NAME', name);
       if (name) await setVariable(etok, 'AUTHOR_NAME', name);
