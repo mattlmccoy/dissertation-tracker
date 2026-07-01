@@ -6,20 +6,35 @@ import { sealToBase64 } from './vendor/seal.js?v=fb611ce';
 import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=fb611ce';
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=fb611ce';
 
-// Guided owner tour: spotlights each feature. before() only reveals UI (opens the release panel),
-// never sends/saves. The engine skips any step whose element is absent, so it degrades gracefully.
+// Guided owner tour — points only at elements that are reliably present on the home view, so nothing
+// is mis-highlighted. The engine skips any step whose element is absent.
 const OWNER_TOUR = [
-  { sel:'#topbar', title:'Welcome to your reviewer', body:'This is your control center: read chapters, collect advisor comments, and manage releases — all here.' },
-  { sel:'#nav', title:'Your chapters', body:'Every chapter of your document. Click one to open it, then select text or a figure to leave yourself a note.' },
-  { sel:'#inbox-panel', title:'Comments from advisors', body:'Everything your reviewers leave lands here, grouped by person and chapter — reply, resolve, or address each one.' },
-  { sel:'#btn-export', title:'Export with comments', body:'Download any chapter (or the whole document) as Word, PDF, or Markdown — with comments and tracked changes baked in.' },
-  { sel:'#home-downloads', title:'Your downloads', body:'Finished exports collect here, versioned and ready to hand off.' },
-  { sel:'#btn-theme', title:'Light / dark', body:'Switch the whole app between light and dark mode anytime.' },
-  { sel:'#btn-releases', title:'Release to advisors', body:'Open this to invite advisors and choose who sees which chapters.' },
-  { sel:'#adv-email-banner', title:'Connect email (once)', body:'Set up sending once and advisor invites go out automatically. Pick Gmail (an App Password) or your university email.', before:() => openReleasePanel() },
-  { sel:'.advadd', title:'Add an advisor', body:'Enter a name + email to create their private review portal and send an invite with a link and access key.' },
-  { sel:'.rel-tbl', title:'Who sees what', body:'Tick the chapters each advisor may review, then Save & publish. Their comments flow back into your inbox above.' },
+  { sel:'#btn-token', title:'Add your access token', body:'The reviewer reads your private data with a GitHub token, stored only in this browser. Click here to paste a fine-grained token (Contents: read/write on your data repo). Do this first.' },
+  { sel:'.chcard', title:'Your chapters', body:'Open any chapter to read it and address the comments your advisors leave in the side rail.' },
+  { sel:'#btn-releases', title:'Release to advisors', body:'Invite advisors, connect email so invites send automatically, and choose which chapters each advisor may review.' },
+  { sel:'#btn-export', title:'Responses to advisors', body:'Generate a printable page that shows each advisor how you addressed their comments. (This is a response summary — NOT an export of your document.)' },
+  { sel:'#dl-export-all', title:'Export with comments', body:'Download the whole dissertation (or any chapter\'s "..." → Export) as Word, PDF, or Markdown — with comments and tracked changes baked in.' },
+  { sel:'#btn-outline', title:'Proposed outline', body:'Share your planned structure so advisors can comment on it before chapters are released.' },
+  { sel:'#btn-tour', title:'Replay or turn off the tour', body:'Reopen this tour, or turn off auto-show for new users, from here anytime.' },
 ];
+// Small menu on the home "?" button: replay the tour, or toggle auto-show for first-time users.
+function openTourMenu(){
+  document.getElementById('tourmenu')?.remove();
+  const btn = document.getElementById('btn-tour'); if (!btn) return;
+  const r = btn.getBoundingClientRect();
+  const m = document.createElement('div'); m.id = 'tourmenu';
+  m.style.cssText = `position:absolute;top:${r.bottom+6}px;right:${Math.max(8, window.innerWidth-r.right)}px;z-index:46;background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-md);box-shadow:0 10px 30px rgba(0,0,0,.16);padding:6px;min-width:230px`;
+  const off = tourSeen('tour-owner-v1');
+  m.innerHTML = `<div class="mmi" data-a="run"><i class="ti ti-help-circle"></i>Take the tour</div>
+    <div class="mmi" data-a="toggle"><i class="ti ti-${off?'eye-off':'eye-check'}"></i>Auto-show for new users: ${off?'off':'on'}</div>`;
+  document.body.appendChild(m);
+  m.querySelectorAll('.mmi').forEach(el => { el.onmouseenter = () => el.style.background='var(--bg-3)'; el.onmouseleave = () => el.style.background='transparent';
+    el.onclick = () => { m.remove();
+      if (el.dataset.a === 'run') launchOwnerTour();
+      else if (tourSeen('tour-owner-v1')){ localStorage.removeItem('tour-owner-v1'); flash('Auto-tour on — it\'ll show on next load.'); }
+      else { markTourSeen('tour-owner-v1'); flash('Auto-tour turned off.'); } }; });
+  setTimeout(() => document.addEventListener('click', function h(e){ if (!m.contains(e.target) && e.target.id!=='btn-tour' && !e.target.closest?.('#btn-tour')){ m.remove(); document.removeEventListener('click', h); } }), 0);
+}
 function launchOwnerTour(){ startTour(OWNER_TOUR, { storageKey:'tour-owner-v1' }); }
 // Mark seen the moment it auto-launches (not just on finish) so a hard refresh never re-triggers it
 // for a returning user. The ⋯ menu lets them replay it or turn auto-show back on.
@@ -1379,15 +1394,19 @@ function enterHome(){
   document.getElementById('topbar').innerHTML =
     `<strong style="font-size:16px;font-weight:600">Dissertation Reviewer</strong>
      <span style="margin-left:auto;font-size:12.5px;color:var(--text-2);display:inline-flex;align-items:center;gap:6px"><i class="ti ti-flag"></i>defense in ${daysToDefense()} days</span>
+     <button class="btn" id="btn-token" style="padding:6px 12px${tok()?'':';color:var(--warn);border-color:var(--warn)'}" title="Your GitHub access token"><i class="ti ti-key"></i>${tok()?'Token':'Add token'}</button>
      <button class="btn" id="btn-outline" style="padding:6px 12px" title="Proposed outline (what advisors see)"><i class="ti ti-list-tree"></i>Outline</button>
      <button class="btn" id="btn-export" style="padding:6px 12px" title="Printable response to advisor comments"><i class="ti ti-file-text"></i>Response</button>
      <button class="btn" id="btn-releases" style="padding:6px 12px"><i class="ti ti-users"></i>Advisor releases</button>
+     <button class="icbtn" id="btn-tour" title="Take the tour"><i class="ti ti-help-circle"></i></button>
      <a class="icbtn" href="./index.html" title="Back to dashboard"><i class="ti ti-layout-dashboard"></i></a>
      <button class="icbtn" id="btn-theme"><i class="ti ti-moon"></i></button>`;
   document.getElementById('btn-theme').onclick = toggleTheme;
   document.getElementById('btn-releases').onclick = openReleasePanel;
   document.getElementById('btn-export').onclick = exportAdvisorResponse;
   document.getElementById('btn-outline').onclick = loadOwnerOutline;
+  document.getElementById('btn-token').onclick = manageToken;
+  document.getElementById('btn-tour').onclick = openTourMenu;
   read.innerHTML = homeHtml();
   read.querySelectorAll('.chcard[data-ch], .btn[data-ch]').forEach(el => el.onclick = () => enterChapter(el.dataset.ch));
   refreshInbox();
