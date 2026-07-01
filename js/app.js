@@ -4,6 +4,21 @@ import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl,
 import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=c1bd964';
 import { sealToBase64 } from './vendor/seal.js?v=c1bd964';
 import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=c1bd964';
+import { startTour, tourSeen } from './tour.js?v=dev';
+
+// Guided owner tour: spotlights each feature. before() only reveals UI (opens the release panel),
+// never sends/saves. The engine skips any step whose element is absent, so it degrades gracefully.
+const OWNER_TOUR = [
+  { sel:'#topbar', title:'Welcome to your reviewer', body:'Your chapters and the comments you receive appear below. Setup and management live up here.' },
+  { sel:'#btn-more', title:'The menu', body:'Your GitHub access token, keyboard shortcuts, and this tour live in this ⋯ menu.' },
+  { sel:'#btn-releases', title:'Release to advisors', body:'This opens the panel where you invite advisors and choose who sees which chapters.' },
+  { sel:'#adv-email-banner', title:'Connect email (once)', body:'Set up sending once and advisor invites go out automatically. Pick Gmail (an App Password) or your university email.', before:() => openReleasePanel() },
+  { sel:'.advadd', title:'Add an advisor', body:'Enter a name + email to create their private review portal and send them an invite with a link and access key.' },
+  { sel:'.rel-tbl', title:'Who sees what', body:'Tick the chapters each advisor may review, then Save & publish. Their comments come back into your inbox below.' },
+];
+function launchOwnerTour(){ startTour(OWNER_TOUR, { storageKey:'tour-owner-v1' }); }
+if (!tourSeen('tour-owner-v1')) setTimeout(() => { try { launchOwnerTour(); } catch {} }, 1400);
+>>>>>>> f17a8f0 (feat(tour): owner tour steps, 'Take the tour' menu item, auto-launch once)
 
 const DATA_REPO = 'mattlmccoy/dissertation-tracker-data';
 const CHAPTERS = [
@@ -1718,9 +1733,10 @@ function openMoreMenu(){
     <div class="mmi" data-act="release"><i class="ti ti-users"></i>Release to advisors…</div>
     <div class="mmi" data-act="help"><i class="ti ti-keyboard"></i>Buttons & shortcuts</div>
     <div class="mmi" data-act="token"><i class="ti ti-key"></i>Access token${hasTok?' <span style="color:var(--success);font-size:11px;margin-left:auto">connected</span>':' <span style="color:var(--warn);font-size:11px;margin-left:auto">not set</span>'}</div>
+    <div class="mmi" data-act="tour"><i class="ti ti-help-circle"></i>Take the tour</div>
     <div class="mmi" data-act="dash"><i class="ti ti-layout-dashboard"></i>Back to dashboard</div>`;
   document.body.appendChild(menu);
-  const acts = { release: openReleasePanel, help: toggleHelp, token: manageToken, dash: () => location.href = './index.html' };
+  const acts = { release: openReleasePanel, help: toggleHelp, token: manageToken, dash: () => location.href = './index.html', tour: launchOwnerTour };
   menu.querySelectorAll('.mmi').forEach(el => { el.onmouseenter = () => el.style.background='var(--bg-3)'; el.onmouseleave = () => el.style.background='transparent';
     el.onclick = () => { menu.remove(); acts[el.dataset.act](); }; });
   setTimeout(() => document.addEventListener('click', function h(e){ if (!menu.contains(e.target) && e.target.id!=='btn-more' && !e.target.closest?.('#btn-more')){ menu.remove(); document.removeEventListener('click', h); } }), 0);
