@@ -41,7 +41,17 @@ export async function startTour(steps, opts = {}){
     $('.tour-tip-prog').textContent = `${i+1} of ${steps.length}`;
     $('.tour-back').style.visibility = i === 0 ? 'hidden' : 'visible';
     $('.tour-next').textContent = i === steps.length - 1 ? 'Done' : 'Next';
-    const tw = 300; let left = Math.min(Math.max(8, r.left), window.innerWidth - tw - 8);
+    const tw = 300;
+    // step.pin fixes the tooltip to a screen corner so it never covers a popup that opens on the
+    // highlighted element (e.g. the comment box that appears when you select text).
+    if (step.pin){
+      const m = 16, th = tip.offsetHeight || 150;
+      const P = { tl:[m,74], tr:[window.innerWidth-tw-m,74], bl:[m,window.innerHeight-th-m], br:[window.innerWidth-tw-m,window.innerHeight-th-m] };
+      const [px,py] = P[step.pin] || P.bl;
+      Object.assign(tip.style, { left:`${Math.max(8,px)}px`, top:`${Math.max(8,py)}px`, width:`${tw}px` });
+      return;
+    }
+    let left = Math.min(Math.max(8, r.left), window.innerWidth - tw - 8);
     let top = r.bottom + 10; if (top + 140 > window.innerHeight) top = Math.max(8, r.top - 150);
     Object.assign(tip.style, { left:`${left}px`, top:`${top}px`, width:`${tw}px` });
   }

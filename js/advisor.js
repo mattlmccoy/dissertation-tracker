@@ -9,7 +9,8 @@ import { startTour, tourSeen, markTourSeen } from './tour.js?v=989d42c';
 // only spotlights and explains — nothing here is ever sent or saved.
 function loadDemoChapter(){
   const el = document.getElementById('read'); if (!el) return () => {};
-  const prev = el.innerHTML;
+  const cmt = document.getElementById('comments');
+  const prevRead = el.innerHTML, prevCmt = cmt ? cmt.innerHTML : '', prevDisp = cmt ? cmt.style.display : '';
   const fig = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="520" height="200"><rect width="520" height="200" fill="#e9e7e1"/><text x="260" y="106" font-family="sans-serif" font-size="16" fill="#8f8d84" text-anchor="middle">Sample figure</text></svg>');
   el.innerHTML = `<article id="doc">
     <h1>Chapter 3 · Sample (tour preview)</h1>
@@ -20,17 +21,28 @@ function loadDemoChapter(){
     <table><caption>Table 3.1. Sample results.</caption><thead><tr><th>Case</th><th>Value</th></tr></thead>
       <tbody><tr><td>Baseline</td><td>12.4</td></tr><tr><td>Compensated</td><td>4.1</td></tr></tbody></table>
     <p>Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium totam rem aperiam.</p></article>`;
-  return () => { el.innerHTML = prev; };
+  try { wireFigures(document.getElementById('doc')); } catch {}   // make the sample figure clickable
+  if (cmt){                                                        // show a sample note + a submit button
+    cmt.style.display = '';
+    cmt.innerHTML = `<div class="lbl">MY COMMENTS<span style="margin-left:auto">1 active</span></div>
+      <div id="tour-demo-note" style="border:.5px solid var(--border);border-radius:9px;padding:10px;margin-bottom:10px">
+        <div style="font-size:11px;color:var(--text-3)">§ Chapter 3 · on "reviewing works"</div>
+        <div style="font-size:13px;margin:5px 0 7px;color:var(--text)">Consider clarifying this sentence for a general reader.</div>
+        <span class="chip" style="background:var(--wording-bg);color:var(--wording)">wording</span></div>
+      <button id="tour-demo-submit" class="btn btn-primary" style="width:100%;justify-content:center"><i class="ti ti-send"></i>Submit comments</button>`;
+  }
+  return () => { el.innerHTML = prevRead; if (cmt){ cmt.innerHTML = prevCmt; cmt.style.display = prevDisp; } };
 }
-// First-run tour of the reading + commenting surface. Non-destructive spotlight, on demo content.
+// First-run walkthrough of the whole review pipeline, on interactive demo content. Spotlight-explain;
+// the demo is live so text-select and figure-click actually work, but nothing is sent or saved.
 const ADVISOR_TOUR = [
   { sel:'#nav', title:'Released chapters', body:'The chapters the author shared with you. Click one to open it. (We loaded a sample chapter so you can see the rest of the tour.)' },
-  { sel:'#doc h1', title:'The reading view', body:'Chapters open on a clean, distraction-free page.' },
-  { sel:'#tour-demo-select', title:'Comment on text', body:'Select any words to attach a comment exactly there — the author sees it privately.' },
-  { sel:'#doc figure', title:'Comment on a figure', body:'Click a figure to leave a note about that figure specifically.' },
+  { sel:'#doc h1', title:'The reading view', body:'Chapters open on a clean, distraction-free page — read top to bottom.' },
+  { sel:'#tour-demo-select', title:'Comment on text', body:'Try selecting a few of these words — a box pops up where you type your note, pick a tag, and save. It attaches exactly there, private to the author.', pin:'bl' },
+  { sel:'#doc figure', title:'Comment on a figure', body:'Click the sample figure to comment on it specifically — you can even draw a box or circle to point at the issue.', pin:'bl' },
   { sel:'#doc table', title:'Everything is reviewable', body:'Tables, equations, and figures can all be commented on — not just paragraphs.' },
-  { sel:'#comments', title:'Your notes', body:'Your comments and suggested edits collect here. In a note you can propose exact wording for the author to accept in one click.' },
-  { sel:'#topbar', title:'Submit & settings', body:'Submit your comments when you\'re done, and switch light or dark mode — up here.' },
+  { sel:'#tour-demo-note', title:'Your notes', body:'Every note you leave collects here (this one is a sample). In a note you can also propose exact replacement wording for the author to accept in one click.' },
+  { sel:'#tour-demo-submit', title:'Submit when done', body:'Once you\'ve left your comments, Submit comments sends them all to the author. You can always come back and add more later.' },
   { sel:'#adv-tour-btn', title:'Replay anytime', body:'Reopen this tour whenever you like with the ? button.' },
 ];
 function launchAdvisorTour(){ const restore = loadDemoChapter(); startTour(ADVISOR_TOUR, { storageKey:'tour-advisor-v1', onDone: restore }); }
