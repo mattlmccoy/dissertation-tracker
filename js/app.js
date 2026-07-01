@@ -1,10 +1,10 @@
-import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=cbbb3e5';
-import { anchorFromSelection } from './anchor.js?v=cbbb3e5';
-import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=cbbb3e5';
-import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=cbbb3e5';
-import { sealToBase64 } from './vendor/seal.js?v=cbbb3e5';
-import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=cbbb3e5';
-import { startTour, tourSeen } from './tour.js?v=cbbb3e5';
+import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=8f809f6';
+import { anchorFromSelection } from './anchor.js?v=8f809f6';
+import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=8f809f6';
+import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=8f809f6';
+import { sealToBase64 } from './vendor/seal.js?v=8f809f6';
+import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=8f809f6';
+import { startTour, tourSeen } from './tour.js?v=8f809f6';
 
 // Guided owner tour: spotlights each feature. before() only reveals UI (opens the release panel),
 // never sends/saves. The engine skips any step whose element is absent, so it degrades gracefully.

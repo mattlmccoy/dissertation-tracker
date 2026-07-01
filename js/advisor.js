@@ -1,8 +1,8 @@
 // advisor.js — reviewer portal for a single named reviewer. Shows only the chapters released to
 // them, lets them comment on text and figures and propose exact edits, and submits those back
 // privately. Self-contained (only the anchor helper is shared) — no build tooling of any kind.
-import { anchorFromSelection } from './anchor.js?v=cbbb3e5';
-import { startTour, tourSeen } from './tour.js?v=cbbb3e5';
+import { anchorFromSelection } from './anchor.js?v=8f809f6';
+import { startTour, tourSeen } from './tour.js?v=8f809f6';
 
 // Short first-run tour of the reading + commenting surface. Non-destructive spotlight only.
 const ADVISOR_TOUR = [
