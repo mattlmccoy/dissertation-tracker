@@ -2032,7 +2032,12 @@ gh variable set PORTAL_BASE --repo ${dataRepo}</pre>
   // Turn an SMTP error into an actionable, provider-specific hint. "Login denied"/535/auth means the
   // username or key was rejected — the #1 cause is using the account password instead of the app key.
   const authHint = (provider, err) => {
-    const isAuth = /login denied|535|5\.7\.|authenticat|credential|\(67\)/i.test(err || '');
+    const e = err || '';
+    // Brevo IP allowlisting blocks CI's changing IPs — the credentials are fine, the IP is rejected.
+    if (/unauthorized ip|525|5\.7\.1/i.test(e)){
+      return 'Your email server is blocking the sending server\'s IP. In <b>Brevo → Settings → Security → Authorised IPs</b>, remove the IP restriction (allow any IP) — GitHub\'s servers use changing IPs. Or switch to <b>Gmail</b>, which has no IP restriction.';
+    }
+    const isAuth = /login denied|535|5\.7\.0|authenticat|credential|\(67\)/i.test(e);
     if (!isAuth) return 'Go Back, fix the setting, and try again.';
     switch (provider){
       case 'brevo':   return 'The server rejected your login. In Brevo → <b>SMTP &amp; API → SMTP</b>: the password must be the <b>SMTP key</b> (not your account password), and the sending address must be the <b>Login</b> shown on that page (your Brevo account email). Also make sure your Brevo account is activated for sending.';
