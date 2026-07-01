@@ -1,9 +1,9 @@
-import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=be59739';
-import { anchorFromSelection } from './anchor.js?v=be59739';
-import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=be59739';
-import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=be59739';
-import { sealToBase64 } from './vendor/seal.js?v=be59739';
-import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=be59739';
+import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=b5ea974';
+import { anchorFromSelection } from './anchor.js?v=b5ea974';
+import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=b5ea974';
+import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=b5ea974';
+import { sealToBase64 } from './vendor/seal.js?v=b5ea974';
+import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=b5ea974';
 
 const DATA_REPO = 'mattlmccoy/dissertation-tracker-data';
 const CHAPTERS = [
