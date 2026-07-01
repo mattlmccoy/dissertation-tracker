@@ -2060,10 +2060,12 @@ gh variable set PORTAL_BASE --repo ${dataRepo}</pre>
       stat.textContent = 'Sending a test email…';
       const before = (await latestRun(etok))?.id || 0;
       await dispatchInvite(etok, testTo);
+      // Poll with etok (the capable token) — the saved login may lack Actions:read, which used to
+      // 403 here AFTER a successful dispatch and mislead with "Actions not enabled".
       const deadline = Date.now() + 90000; let run = null;
       while (Date.now() < deadline){
         await new Promise(r => setTimeout(r, 4000));
-        run = await latestRun(tok());
+        run = await latestRun(etok);
         if (run && run.id !== before && run.status === 'completed') break;
       }
       if (!run || run.status !== 'completed'){ stat.innerHTML = 'Saved, but the test run didn\'t finish in time. Check back in a minute and reopen.'; return; }
