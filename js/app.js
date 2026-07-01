@@ -18,7 +18,6 @@ const OWNER_TOUR = [
 ];
 function launchOwnerTour(){ startTour(OWNER_TOUR, { storageKey:'tour-owner-v1' }); }
 if (!tourSeen('tour-owner-v1')) setTimeout(() => { try { launchOwnerTour(); } catch {} }, 1400);
->>>>>>> f17a8f0 (feat(tour): owner tour steps, 'Take the tour' menu item, auto-launch once)
 
 const DATA_REPO = 'mattlmccoy/dissertation-tracker-data';
 const CHAPTERS = [

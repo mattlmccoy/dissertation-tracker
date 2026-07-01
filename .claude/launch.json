@@ -1,6 +1,6 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "reviewer", "runtimeExecutable": "python3", "runtimeArgs": ["-m","http.server","8731"], "port": 8731 }
+    { "name": "diss-static", "runtimeExecutable": "python3", "runtimeArgs": ["-m", "http.server", "8891"], "port": 8891 }
   ]
 }
