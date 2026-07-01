@@ -1849,7 +1849,7 @@ async function openReleasePanel(){
     const { json, sha } = await getJson(t, 'advisors.json').catch(() => ({ json:null, sha:null }));
     const reg = json && Array.isArray(json.advisors) ? json : { advisors: [] };
     fn(reg);
-    advSha = await putJson(t, 'advisors.json', reg, sha, msg);
+    await putJson(t, 'advisors.json', reg, sha, msg);   // sha refetched each call, so no cached advSha to update
     advReg.advisors = reg.advisors;
   };
   const addAdvisor = async () => {
