@@ -1899,103 +1899,127 @@ gh variable set PORTAL_BASE --repo ${dataRepo}</pre>
     try { await latestRun(token); }        catch(e){ if (isScopeError(e)) return null; throw e; }
     return pk;
   };
-  // Injected only when the saved login can't write settings — a visually separate one-time GitHub
-  // token (never confused with the email password, never stored).
-  const injectTokenSection = ($) => {
-    const slot = $('ce-token-slot'); if (!slot || $('ce-ghtoken')) return;
-    slot.innerHTML = `
-      <div style="border:.5px solid var(--warn);background:var(--warn-bg);border-radius:7px;padding:9px 10px">
-        <div style="font-weight:600;font-size:12px;margin-bottom:3px"><i class="ti ti-key"></i> One-time GitHub token — to <u>save</u> these settings</div>
-        <div style="font-size:11px;color:var(--text-2);line-height:1.5;margin-bottom:7px">Separate from your email password. Your saved login can read your files but can't store settings, so GitHub needs a quick token (used once here, never stored). Click Generate, keep the <b>repo</b> box checked, create it, and paste it below.</div>
-        <a href="${TOKEN_URL}" target="_blank" rel="noopener" class="btn" style="padding:4px 10px;font-size:11.5px;text-decoration:none;display:inline-flex;align-items:center;gap:4px"><i class="ti ti-external-link"></i>Generate token</a>
-        <input id="ce-ghtoken" type="password" placeholder="paste the GitHub token here" style="${inputCss};margin-top:7px">
-      </div>`;
-  };
+  // Stepped Connect-email wizard: one decision per screen, provider first, with the exact "get your
+  // key" instructions + link shown right where they're needed. State lives in S and every input writes
+  // to it, so re-rendering a step never loses what was typed.
   const openConnectForm = () => {
     const box = document.getElementById('adv-email-banner'); if (!box) return;
-    const opts = Object.values(PROVIDERS).map(p => `<option value="${p.id}">${escapeHtml(p.label)}</option>`).join('');
-    // Render synchronously — NEVER block on the network, so this can't get stuck on "Checking…".
-    box.innerHTML = `
-      <div style="border:.5px solid var(--border);border-radius:9px;padding:13px;margin-bottom:12px">
-        <div style="font-weight:600;font-size:13px;margin-bottom:9px"><i class="ti ti-plug"></i> Connect email</div>
-        <div style="display:grid;gap:8px;font-size:12.5px">
-          <label>Sending email address<input id="ce-user" type="email" placeholder="you@example.com" style="${inputCss}"></label>
-          <label>Provider<select id="ce-prov" style="${inputCss}"><option value="">Choose a provider…</option>${opts}</select></label>
-          <div id="ce-keycallout"></div>
-          <label>App password / API key
-            <div style="font-size:11px;color:var(--text-3);font-weight:400;margin:2px 0 3px">The generated code from the link above — <b>not</b> your normal email login password.</div>
-            <input id="ce-pass" type="password" placeholder="paste the generated app password / API key" style="${inputCss}"></label>
-          <div style="display:grid;grid-template-columns:1fr 90px;gap:8px">
-            <label>SMTP host<input id="ce-host" style="${inputCss}"></label>
-            <label>Port<input id="ce-port" style="${inputCss}"></label>
-          </div>
-          <label>Your name (shown in the invite)<input id="ce-name" style="${inputCss}"></label>
-          <label>Send a test to<input id="ce-test" type="email" style="${inputCss}"></label>
-          <div style="font-size:11px;color:var(--text-3)">An access key for advisors is generated automatically. Your site URL is filled in for you.</div>
-          <div id="ce-token-slot"></div>
-          <div id="ce-stat" style="font-size:12px;color:var(--text-3);min-height:16px"></div>
-          <div style="display:flex;gap:8px"><button id="ce-go" class="btn btn-primary" style="padding:5px 12px;font-size:12px"><i class="ti ti-check"></i>Connect &amp; send test</button>
-            <button id="ce-cancel" class="btn" style="padding:5px 12px;font-size:12px">Cancel</button></div>
-        </div>
-      </div>`;
+    const S = { step:'provider', provider:'', user:'', pass:'', host:'', port:'', name:'', testTo:'', ghtoken:'',
+                needToken:false, savedPk:null };
     const $ = id => document.getElementById(id);
-    let provTouched = false;   // once the owner picks a provider by hand, stop auto-detecting
-    const applyProv = pid => { const p = PROVIDERS[pid]; if (!p) return;
-      $('ce-host').value = p.host; $('ce-port').value = p.port;
-      const co = $('ce-keycallout');
-      // For app-password providers (Gmail/Outlook), offer the one-key Brevo path as an easier escape hatch.
-      const brevoNudge = (!p.recommended && p.keyUrl) ? `<div style="margin-top:6px;color:var(--text-3)">No app password, or it's blocked? <a href="#" id="ce-usebrevo" style="font-weight:600">Use Brevo instead</a> — one key, no 2-Step.</div>` : '';
-      if (p.keyUrl){
-        co.innerHTML = `<div style="border:.5px solid var(--warn);background:var(--warn-bg);border-radius:7px;padding:9px 10px;font-size:11.5px;line-height:1.5">
-          <b>${escapeHtml(p.label)} needs a special ${escapeHtml(p.secretWord)}</b> — this is <b>not</b> your normal login password.
-          <div style="margin-top:5px"><a href="${p.keyUrl}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:3px;font-weight:600"><i class="ti ti-external-link"></i>${escapeHtml(p.keyLabel)}</a></div>
-          ${p.keyNote ? `<div style="color:var(--text-3);margin-top:4px">${escapeHtml(p.keyNote)}</div>` : ''}${brevoNudge}</div>`;
-      } else co.innerHTML = p.keyNote ? `<div style="font-size:11px;color:var(--text-3)">${escapeHtml(p.keyNote)}</div>` : '';
-      const ub = $('ce-usebrevo');
-      if (ub) ub.onclick = e => { e.preventDefault(); provTouched = true; $('ce-prov').value = 'brevo'; applyProv('brevo'); };
-    };
-    // Re-detect on EVERY keystroke (a half-typed domain briefly reads as 'custom'); the finished
-    // address wins — unless the owner has manually chosen a provider.
-    $('ce-user').oninput = () => { if (provTouched) return; const d = detectProvider($('ce-user').value); if (d){ $('ce-prov').value = d; applyProv(d); } };
-    $('ce-prov').onchange = () => { provTouched = true; applyProv($('ce-prov').value); };
-    $('ce-cancel').onclick = () => renderEmailBanner();
-    $('ce-go').onclick = () => connectEmail($);
-    // Background, non-blocking (each guarded + timed out): fill name/test-recipient, and reveal the
-    // token section only if the saved login truly can't write settings.
+    const seq = () => ['provider', 'key', ...(S.needToken ? ['token'] : []), 'test'];
+    const at = () => Math.max(0, seq().indexOf(S.step));
+
+    // background: prefill name/test-recipient, and learn whether the saved login can save settings.
     withTimeout(prefillFromGitHub(tok()), 8000).then(pf => {
-      if (pf.name && !$('ce-name').value) $('ce-name').value = pf.name;
-      if (pf.email && !$('ce-test').value) $('ce-test').value = pf.email;
+      if (!S.name) S.name = pf.name || '';
+      if (!S.testTo) S.testTo = pf.email || '';
+      if (S.step === 'test' || S.step === 'provider') render();
     }).catch(() => {});
-    withTimeout(checkAccess(tok()), 9000).then(pk => { if (!pk) injectTokenSection($); }).catch(() => {});
+    S.probe = withTimeout(checkAccess(tok()), 9000)
+      .then(pk => { S.savedPk = pk; S.needToken = !pk; return pk; })
+      .catch(() => { S.needToken = true; return null; });
+
+    const frame = (title, inner, footer) => `
+      <div style="border:.5px solid var(--border);border-radius:9px;padding:14px;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:11px">
+          <div style="font-weight:600;font-size:13px"><i class="ti ti-plug"></i> ${title}</div>
+          <div style="font-size:11px;color:var(--text-3)">Step ${at() + 1} of ${seq().length}</div>
+        </div>
+        ${inner}
+        <div id="ce-stat" style="font-size:12px;color:var(--text-3);min-height:16px;margin-top:10px"></div>
+        <div style="display:flex;gap:8px;margin-top:8px">${footer}</div>`+`</div>`;
+    const backBtn = `<button id="ce-back" class="btn" style="padding:5px 12px;font-size:12px">Back</button>`;
+    const cancelBtn = `<button id="ce-cancel" class="btn" style="padding:5px 12px;font-size:12px">Cancel</button>`;
+    const nextBtn = `<button id="ce-next" class="btn btn-primary" style="padding:5px 12px;font-size:12px">Next →</button>`;
+    const wireCommon = () => { const c = $('ce-cancel'); if (c) c.onclick = () => renderEmailBanner();
+      const b = $('ce-back'); if (b) b.onclick = () => { S.step = seq()[Math.max(0, at() - 1)]; render(); }; };
+
+    const render = () => {
+      const P = PROVIDERS[S.provider] || {};
+      if (S.step === 'provider'){
+        const cards = [['brevo','Brevo','Easiest — free, one key, no 2-Step Verification'],
+                       ['gmail','Gmail','Uses a Gmail App Password (needs 2-Step on)'],
+                       ['outlook','Outlook / Office 365','Personal, or work/school'],
+                       ['custom','Other','Any email provider — you enter the details']]
+          .map(([id, name, desc]) => `<button class="ce-pick btn" data-id="${id}" style="display:block;width:100%;text-align:left;padding:10px 12px;margin-bottom:7px">
+             <div style="font-weight:600;font-size:12.5px">${name}${id === 'brevo' ? ' <span style="color:var(--success)">· recommended</span>' : ''}</div>
+             <div style="color:var(--text-3);font-size:11.5px;margin-top:1px">${desc}</div></button>`).join('');
+        box.innerHTML = frame('Connect email', `<div style="font-size:12px;color:var(--text-3);margin-bottom:9px">Which email should the invites be sent from?</div>${cards}`, cancelBtn);
+        box.querySelectorAll('.ce-pick').forEach(b => b.onclick = () => { S.provider = b.dataset.id; S.step = 'key'; render(); });
+        wireCommon();
+        return;
+      }
+      if (S.step === 'key'){
+        const howto = (P.howto || []).map(s => `<li>${escapeHtml(s)}</li>`).join('');
+        const link = P.keyUrl ? `<a href="${P.keyUrl}" target="_blank" rel="noopener" class="btn" style="padding:5px 11px;font-size:11.5px;text-decoration:none;display:inline-flex;align-items:center;gap:4px;margin:2px 0 10px"><i class="ti ti-external-link"></i>${escapeHtml(P.keyLabel || 'Open provider')}</a>` : '';
+        const customHostPort = S.provider === 'custom' ? `
+          <div style="display:grid;grid-template-columns:1fr 90px;gap:8px;margin-bottom:9px">
+            <label style="font-size:12px">SMTP host<input id="ce-host" value="${escapeHtml(S.host)}" placeholder="smtp.yourprovider.com" style="${inputCss}"></label>
+            <label style="font-size:12px">Port<input id="ce-port" value="${escapeHtml(S.port || '587')}" style="${inputCss}"></label>
+          </div>` : '';
+        box.innerHTML = frame(`Get your ${escapeHtml(P.secretWord)}`,
+          `<div style="font-size:12px;color:var(--text-2);margin-bottom:6px">This is a special key you generate — <b>not</b> your normal email login password.</div>
+           <ol style="margin:0 0 9px 17px;padding:0;font-size:12px;line-height:1.65;color:var(--text-2)">${howto}</ol>${link}
+           <label style="font-size:12px">Sending email address<input id="ce-user" type="email" value="${escapeHtml(S.user)}" placeholder="you@example.com" style="${inputCss};margin-bottom:9px"></label>
+           ${customHostPort}
+           <label style="font-size:12px">Paste your ${escapeHtml(P.secretWord)}<input id="ce-pass" type="password" value="${escapeHtml(S.pass)}" placeholder="the ${escapeHtml(P.secretWord)} from the step above" style="${inputCss}"></label>`,
+          backBtn + nextBtn + cancelBtn);
+        $('ce-user').oninput = e => S.user = e.target.value;
+        $('ce-pass').oninput = e => S.pass = e.target.value;
+        if (S.provider === 'custom'){ $('ce-host').oninput = e => S.host = e.target.value; $('ce-port').oninput = e => S.port = e.target.value; }
+        $('ce-next').onclick = async () => {
+          if (!S.user.trim() || !S.pass){ $('ce-stat').textContent = `Enter your sending address and your ${P.secretWord}.`; return; }
+          if (S.provider === 'custom' && (!S.host.trim() || !(S.port || '').trim())){ $('ce-stat').textContent = 'Enter your SMTP host and port.'; return; }
+          $('ce-stat').textContent = 'Checking…'; await S.probe;
+          S.step = S.needToken ? 'token' : 'test'; render();
+        };
+        wireCommon();
+        return;
+      }
+      if (S.step === 'token'){
+        box.innerHTML = frame('One quick authorization',
+          `<div style="font-size:12px;line-height:1.6;color:var(--text-2)">To <b>save</b> these settings, GitHub needs a one-time token (used once, never stored). It's separate from your email — your saved login can read your files but can't store settings.</div>
+           <ol style="margin:9px 0 9px 17px;padding:0;font-size:12px;line-height:1.65;color:var(--text-2)"><li>Click <b>Generate token</b> below.</li><li>Keep the <b>repo</b> box checked, then create the token.</li><li>Copy it and paste it here.</li></ol>
+           <a href="${TOKEN_URL}" target="_blank" rel="noopener" class="btn" style="padding:5px 11px;font-size:11.5px;text-decoration:none;display:inline-flex;align-items:center;gap:4px;margin-bottom:10px"><i class="ti ti-external-link"></i>Generate token</a>
+           <input id="ce-ghtoken" type="password" value="${escapeHtml(S.ghtoken)}" placeholder="paste the GitHub token here" style="${inputCss}">`,
+          backBtn + nextBtn + cancelBtn);
+        $('ce-ghtoken').oninput = e => S.ghtoken = e.target.value;
+        $('ce-next').onclick = () => { if (!S.ghtoken.trim()){ $('ce-stat').textContent = 'Paste the token (click Generate token first).'; return; } S.step = 'test'; render(); };
+        wireCommon();
+        return;
+      }
+      // test step
+      box.innerHTML = frame('Send a test to confirm',
+        `<div style="font-size:12px;color:var(--text-3);margin-bottom:9px">We'll send one real email to make sure it works. After that, invites go out automatically.</div>
+         <label style="font-size:12px">Your name (shown in the invite)<input id="ce-name" value="${escapeHtml(S.name)}" style="${inputCss};margin-bottom:9px"></label>
+         <label style="font-size:12px">Send the test to<input id="ce-test" type="email" value="${escapeHtml(S.testTo)}" placeholder="your@email.com" style="${inputCss}"></label>`,
+        backBtn + `<button id="ce-go" class="btn btn-primary" style="padding:5px 12px;font-size:12px"><i class="ti ti-send"></i> Connect &amp; send test</button>` + cancelBtn);
+      $('ce-name').oninput = e => S.name = e.target.value;
+      $('ce-test').oninput = e => S.testTo = e.target.value;
+      $('ce-go').onclick = () => runConnect(S, $('ce-stat'));
+      wireCommon();
+    };
+    render();
   };
-  const connectEmail = async ($) => {
-    const stat = $('ce-stat');
-    const user = $('ce-user').value.trim(), pass = $('ce-pass').value, host = $('ce-host').value.trim(),
-          port = $('ce-port').value.trim(), name = $('ce-name').value.trim(), testTo = $('ce-test').value.trim();
-    if (!user || !pass){ stat.textContent = 'Sending address and app password / API key are required.'; return; }
-    if (!host || !port){ stat.textContent = 'SMTP host and port are required — pick a provider.'; return; }
+  // Do the actual work from the wizard's collected state: verify token can write secrets AND run
+  // Actions, write the secrets/vars, fire a real test send, and report the true outcome.
+  const runConnect = async (S, stat) => {
+    const P = PROVIDERS[S.provider] || {};
+    const user = (S.user || '').trim(), pass = S.pass, name = (S.name || '').trim(), testTo = (S.testTo || '').trim();
+    const host = (S.provider === 'custom' ? S.host : P.host || '').trim();
+    const port = String(S.provider === 'custom' ? (S.port || '587') : P.port || '').trim();
+    if (!user || !pass){ stat.textContent = 'Missing your sending address or key — go Back.'; return; }
+    if (!host || !port){ stat.textContent = 'Missing SMTP host/port — go Back.'; return; }
     if (!testTo){ stat.textContent = 'Enter an address to send the test to.'; return; }
-    // Elevated token: use the saved login; if a token field is present (probe said it lacks scope),
-    // use that instead. No popups, no prompt() — the two secrets stay visibly separate.
-    let etok = tok();
-    const ghField = $('ce-ghtoken');
-    if (ghField){
-      const gh = (ghField.value || '').trim();
-      if (!gh){ stat.innerHTML = 'Paste the one-time <b>GitHub token</b> in the box above (click <b>Generate token</b>). It is separate from your email password.'; return; }
-      etok = gh;
-    }
+    let etok = S.needToken ? (S.ghtoken || '').trim() : tok();
+    if (S.needToken && !etok){ stat.textContent = 'Missing the GitHub token — go Back a step.'; return; }
     stat.textContent = 'Checking access…';
-    // Verify Secrets + Actions together, so we never fail mid-write with "runs 403".
     let pk;
-    try { pk = await checkAccess(etok); }
+    try { pk = (S.needToken || !S.savedPk) ? await checkAccess(etok) : S.savedPk; }
     catch(e){ stat.textContent = 'Access check failed: ' + e.message; return; }
-    if (!pk){
-      if (ghField){ stat.innerHTML = 'That GitHub token is missing <b>Secrets</b> or <b>Actions</b> access — regenerate it with the <b>repo</b> box ticked (that grants both), then paste again.'; return; }
-      injectTokenSection($);
-      stat.innerHTML = 'Saving needs a one-time <b>GitHub token</b> with repo access — I added a box for it above. Click Generate (keep <b>repo</b> checked), paste, and Connect again.'; return;
-    }
+    if (!pk){ stat.innerHTML = 'That GitHub token is missing <b>Secrets</b> or <b>Actions</b> access — go Back and regenerate it with the <b>repo</b> box ticked.'; return; }
     try {
-      // write secrets + variables
       stat.textContent = 'Saving credentials…';
       const key = genKey();
       await putSecret(etok, pk, sealToBase64, 'SMTP_USER', user);
@@ -2006,32 +2030,27 @@ gh variable set PORTAL_BASE --repo ${dataRepo}</pre>
       if (name) await putSecret(etok, pk, sealToBase64, 'SMTP_FROM_NAME', name);
       if (name) await setVariable(etok, 'AUTHOR_NAME', name);
       await setVariable(etok, 'PORTAL_BASE', portalBase());
-      // 3) fire the test + poll
       stat.textContent = 'Sending a test email…';
       const before = (await latestRun(etok))?.id || 0;
       await dispatchInvite(etok, testTo);
-      etok = null;   // drop the elevated token
       const deadline = Date.now() + 90000; let run = null;
       while (Date.now() < deadline){
         await new Promise(r => setTimeout(r, 4000));
         run = await latestRun(tok());
         if (run && run.id !== before && run.status === 'completed') break;
       }
-      if (!run || run.status !== 'completed'){ stat.innerHTML = 'Saved, but the test run didn\'t finish in time. Check the Actions tab, then reload.'; return; }
-      // 4) read the recorded outcome
+      if (!run || run.status !== 'completed'){ stat.innerHTML = 'Saved, but the test run didn\'t finish in time. Check back in a minute and reopen.'; return; }
       const { json } = await getJson(tok(), 'advisors.json').catch(() => ({ json:null }));
       if (json){ advReg.email_configured = json.email_configured; }
       if (run.conclusion === 'success' && json?.email_test?.ok){
         flash('✅ Test email delivered to ' + testTo + '.');
-        renderEmailBanner();            // clears (email_configured now true)
-        renderAdvList();
+        renderEmailBanner(); renderAdvList();
       } else {
         const err = json?.email_test?.error || ('run concluded: ' + run.conclusion);
-        stat.innerHTML = 'Test send failed: <code>' + escapeHtml(err) + '</code>. Fix the credential and Connect again.';
+        stat.innerHTML = 'Test send failed: <code>' + escapeHtml(err) + '</code>. Go Back, fix the key, and try again.';
       }
     } catch(e){
-      // A late 403 (e.g. dispatch needs Actions:write the token lacks) → actionable guidance, not a raw code.
-      if (isScopeError(e)) stat.innerHTML = 'Your GitHub token is missing the <b>Actions</b> access needed to run the test — regenerate the one-time token with the <b>repo</b> box ticked (that grants it), then Connect again.';
+      if (isScopeError(e)) stat.innerHTML = 'Your GitHub token is missing <b>Actions</b> access — go Back and regenerate it with the <b>repo</b> box ticked.';
       else stat.textContent = 'Failed: ' + e.message;
     }
   };

@@ -9,16 +9,17 @@ const hdr = tok => ({ Authorization:`Bearer ${tok}`, Accept:'application/vnd.git
 // which is never their normal account login password.
 export const PROVIDERS = {
   brevo:    { id:'brevo',    label:'Brevo — recommended (one key, no 2-Step)', host:'smtp-relay.brevo.com', port:587, domains:[], recommended:true,
-              secretWord:'SMTP key', keyUrl:'https://app.brevo.com/settings/keys/smtp', keyLabel:'Create a free Brevo account & get your SMTP key',
-              keyNote:'Easiest, most reliable: free, no 2-Step and no app-password pitfalls. Sign up, open SMTP & API → SMTP, copy the SMTP key, and paste it here. Your Brevo login email is the sending address.' },
+              secretWord:'SMTP key', keyUrl:'https://app.brevo.com/settings/keys/smtp', keyLabel:'Open Brevo — SMTP & API',
+              howto:['Create a free Brevo account (or log in).', 'On the page that opens, find the SMTP & API → SMTP section.', 'Copy your SMTP key (a long string).', 'Your sending address is the email you signed up with.'] },
   gmail:    { id:'gmail',    label:'Gmail',                host:'smtp.gmail.com',     port:465, domains:['gmail.com','googlemail.com'],
-              secretWord:'App Password', keyUrl:'https://myaccount.google.com/apppasswords', keyLabel:'Create your Gmail App Password',
-              keyNote:'Requires 2-Step Verification to be on. Paste the 16-character code (spaces optional).' },
+              secretWord:'App Password', keyUrl:'https://myaccount.google.com/apppasswords', keyLabel:'Open Gmail App Passwords',
+              howto:['Make sure 2-Step Verification is ON for your Google account.', 'On the page that opens, create an App Password (name it anything).', 'Copy the 16-character code it shows (spaces are fine).'] },
   outlook:  { id:'outlook',  label:'Outlook / Office 365', host:'smtp.office365.com', port:587, domains:['outlook.com','hotmail.com','live.com'],
-              secretWord:'app password', keyUrl:'https://account.live.com/proofs/AppPassword', keyLabel:'Create an Outlook app password',
-              keyNote:'For personal Outlook/Hotmail. Work/school (Office 365) accounts set app passwords via your IT security portal.' },
+              secretWord:'app password', keyUrl:'https://account.live.com/proofs/AppPassword', keyLabel:'Open Outlook app passwords',
+              howto:['On the page that opens, create an app password and copy it.', 'Personal Outlook/Hotmail: this page works directly.', 'Work/school (Office 365): create it in your IT security portal instead.'] },
   custom:   { id:'custom',   label:'Custom SMTP',          host:'', port:587, domains:[],
-              secretWord:'app password / API key', keyUrl:'', keyLabel:'', keyNote:"Use your provider's app password or API key, not your login." },
+              secretWord:'app password / API key', keyUrl:'', keyLabel:'',
+              howto:['Get your SMTP host, port, username and app password / API key from your email provider.', 'Enter the host and port below, then your key.'] },
 };
 
 // Map a from-address domain to a provider id. .edu/institutional → outlook; unknown → custom.
