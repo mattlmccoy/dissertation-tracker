@@ -261,3 +261,5 @@ html.dark #syncbanner{color:#ffd98a;background:#3a2e12;border-color:#6b5320} htm
 .tour-overlay .tour-tip-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px}
 .tour-overlay .tour-tip-prog{font-size:11px;color:var(--text-3)}
 .tour-overlay .tour-tip .btn{padding:3px 10px;font-size:11.5px}
+/* During a tour, lift any popup the reviewer opens above the dim so it's fully visible (not darkened). */
+body.tour-active .popover,body.tour-active .figmk-back{z-index:10001}

@@ -24,11 +24,12 @@ export async function startTour(steps, opts = {}){
       <button class="btn tour-back">Back</button>
       <button class="btn btn-primary tour-next">Next</button></span></div></div>`;
   document.body.appendChild(overlay);
+  document.body.classList.add('tour-active');   // lets CSS lift any popup the user opens above the dim
   const $ = s => overlay.querySelector(s);
   const cut = $('.tour-cut'), tip = $('.tour-tip');
 
   const finish = () => { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true);
-    document.removeEventListener('keydown', onKey); overlay.remove();
+    document.removeEventListener('keydown', onKey); overlay.remove(); document.body.classList.remove('tour-active');
     if (storageKey) markTourSeen(storageKey); if (onDone) onDone(); };
 
   function place(){
