@@ -1769,6 +1769,7 @@ async function openReleasePanel(){
   document.getElementById('rel-body').innerHTML = `
     <div class="rel-sec">Advisors</div>
     <div style="font-size:12px;color:var(--text-3);margin-bottom:10px">Add a reviewer to create their portal and (with an email) send them an invite with their link + access key. The access key can read released chapters and write only review comments — keep it private.</div>
+    <div id="adv-email-banner"></div>
     <div class="advadd" style="display:grid;grid-template-columns:1fr 1fr 140px auto;gap:8px;align-items:center;margin-bottom:12px">
       <input id="adv-name" placeholder="Full name" style="font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);outline:none">
       <input id="adv-email" type="email" placeholder="Email (to send the invite)" style="font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);outline:none">
@@ -1820,7 +1821,53 @@ async function openReleasePanel(){
       catch(err){ alert('Failed: ' + err.message); e.target.checked = !v; }
     };
   });
+  // true only once the invite workflow has confirmed working SMTP creds (it writes email_configured).
+  // Until then we must NOT imply an email was sent — we tell the owner plainly and show how to fix it.
+  const emailConfigured = () => advReg.email_configured === true;
+  const renderEmailBanner = () => {
+    const box = document.getElementById('adv-email-banner'); if (!box) return;
+    if (emailConfigured()){ box.innerHTML = ''; return; }
+    const dataRepo = 'mattlmccoy/dissertation-tracker-data';   // where the invite workflow + secrets live
+    box.innerHTML = `
+      <div style="border:.5px solid var(--warn);background:var(--warn-bg);border-radius:9px;padding:11px 13px;margin-bottom:12px">
+        <div style="display:flex;gap:8px;align-items:flex-start">
+          <i class="ti ti-alert-triangle" style="color:var(--warn);font-size:15px;margin-top:1px"></i>
+          <div style="font-size:12.5px;line-height:1.5;color:var(--text)">
+            <b>Email invites aren't set up yet.</b> You can still add advisors and open their portals — but no invite email is sent automatically. Copy each advisor's portal link (and the access key) and send it yourself, or set up sending once so future invites go out on their own.
+            <button id="adv-email-toggle" class="btn" style="margin-top:9px;padding:3px 10px;font-size:11.5px"><i class="ti ti-settings"></i>Set up email invites</button>
+          </div>
+        </div>
+        <div id="adv-email-guide" style="display:none;margin:11px 0 2px;padding-top:11px;border-top:.5px solid var(--warn);font-size:12px;line-height:1.6;color:var(--text-2)">
+          <div style="font-weight:600;color:var(--text);margin-bottom:5px">One-time setup — you don't have to use Gmail</div>
+          Invites are sent by a GitHub Action in your data repo (<code>${dataRepo}</code>), using any SMTP mail server. Pick whichever you like:
+          <ul style="margin:7px 0 7px 16px;padding:0">
+            <li><b>Institutional / work email</b> — ask IT for the SMTP host, port, and whether an app password is needed (e.g. Georgia Tech, Outlook/Office 365: <code>smtp.office365.com</code> port <code>587</code>).</li>
+            <li><b>Gmail</b> — turn on 2-Step Verification, then create an <i>App Password</i> (Google Account → Security → App passwords). Host <code>smtp.gmail.com</code>, port <code>465</code>. Note: some Google Workspace accounts (incl. some GT accounts) disable app passwords — use a transactional service or institutional SMTP instead.</li>
+            <li><b>Transactional service</b> (no personal inbox needed) — Resend, SendGrid, Mailgun, Postmark. They give you an SMTP host, port, username, and key.</li>
+          </ul>
+          <div style="font-weight:600;color:var(--text);margin:8px 0 4px">Add these in the data repo</div>
+          <div style="margin-bottom:3px">Settings → Secrets and variables → Actions, in <code>${dataRepo}</code>:</div>
+          <div style="font-size:11.5px;margin-left:2px">
+            <b>Secrets</b> — <code>SMTP_USER</code> (login / from-address), <code>SMTP_PASS</code> (password, app password, or API key), <code>ADVISOR_KEY</code> (the access key advisors paste). Optional: <code>SMTP_HOST</code>, <code>SMTP_PORT</code> (default Gmail <code>smtp.gmail.com</code>:<code>465</code>), <code>SMTP_FROM_NAME</code>.<br>
+            <b>Variables</b> — <code>AUTHOR_NAME</code> (shown in the invite), <code>PORTAL_BASE</code> (your site URL, e.g. <code>${portalBase()}</code>).
+          </div>
+          <div style="margin-top:8px">Or with the GitHub CLI:</div>
+          <pre style="background:var(--bg);border:.5px solid var(--border);border-radius:7px;padding:8px 10px;margin:5px 0;font-size:11px;overflow-x:auto;white-space:pre">gh secret set SMTP_USER --repo ${dataRepo}
+gh secret set SMTP_PASS --repo ${dataRepo}
+gh secret set ADVISOR_KEY --repo ${dataRepo}
+# optional non-Gmail server:
+gh secret set SMTP_HOST --repo ${dataRepo}    # e.g. smtp.office365.com
+gh secret set SMTP_PORT --repo ${dataRepo}    # e.g. 587
+gh variable set AUTHOR_NAME --repo ${dataRepo}
+gh variable set PORTAL_BASE --repo ${dataRepo}</pre>
+          Once set, add an advisor (or hit <b>Resend</b>) — the invite goes out and this notice clears.
+        </div>
+      </div>`;
+    const tg = document.getElementById('adv-email-toggle');
+    if (tg) tg.onclick = () => { const g = document.getElementById('adv-email-guide'); if (g) g.style.display = g.style.display === 'none' ? 'block' : 'none'; };
+  };
   const renderAdvList = () => {
+    renderEmailBanner();
     const box = document.getElementById('adv-list'); if (!box) return;
     if (!advReg.advisors.length){ box.innerHTML = `<div style="font-size:12.5px;color:var(--text-3)">No added advisors yet.</div>`; return; }
     box.innerHTML = advReg.advisors.map(a => {
@@ -1866,16 +1913,19 @@ async function openReleasePanel(){
       const { json:relNow, sha:relSha } = await getJson(t, 'release.json');
       relNow[id] = { name, released: [], responses_released: false };
       await putJson(t, 'release.json', relNow, relSha, `release: register ${name}`);
-      stat.innerHTML = email
-        ? `Added. Invite will send shortly. Portal: <code>${escapeHtml(advisorUrl(id, name))}</code>`
-        : `Added (no email — share this portal link yourself): <code>${escapeHtml(advisorUrl(id, name))}</code>`;
+      const link = `<code>${escapeHtml(advisorUrl(id, name))}</code>`;
+      stat.innerHTML = !email
+        ? `Added (no email given — share this portal link yourself): ${link}`
+        : emailConfigured()
+          ? `Added. Invite email will send shortly. Portal: ${link}`
+          : `Added, but email sending isn't set up — <b>no invite was sent</b>. Copy this portal link and send it to them, or set up email invites above: ${link}`;
       document.getElementById('adv-name').value = document.getElementById('adv-email').value = document.getElementById('adv-title').value = '';
       renderAdvList();
     } catch(e){ stat.textContent = 'Failed: ' + e.message; }
   };
   const resendInvite = async (id) => {
     try { await mutateAdvisors(reg => { const a = reg.advisors.find(x=>x.id===id); if (a){ a.invited=false; a.invited_ts=null; a.invite_error=null; } }, `advisors: resend invite ${id}`);
-      flash('Invite re-queued — it will send shortly.'); renderAdvList(); }
+      flash(emailConfigured() ? 'Invite re-queued — it will send shortly.' : 'Re-queued, but email isn\'t set up yet — no email will send until you configure it above.'); renderAdvList(); }
     catch(e){ flash('Failed: ' + e.message); }
   };
   // intentionally high-friction: must type the advisor's exact name. Removes them from the list +
