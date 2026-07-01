@@ -1920,7 +1920,7 @@ gh variable set PORTAL_BASE --repo ${dataRepo}</pre>
   // to it, so re-rendering a step never loses what was typed.
   const openConnectForm = () => {
     const box = document.getElementById('adv-email-banner'); if (!box) return;
-    const S = { step:'provider', provider:'', user:'', from:'', pass:'', host:'', port:'', name:'', testTo:'', ghtoken:'',
+    const S = { step:'provider', provider:'', user:'', from:'', pass:'', host:'', port:'', name:'', testTo:'', ghtoken:'', advkey:'',
                 needToken:false, savedPk:null };
     const $ = id => document.getElementById(id);
     const seq = () => ['provider', 'key', ...(S.needToken ? ['token'] : []), 'test'];
@@ -2044,10 +2044,16 @@ gh variable set PORTAL_BASE --repo ${dataRepo}</pre>
       box.innerHTML = frame('Send a test to confirm',
         `<div style="font-size:12px;color:var(--text-3);margin-bottom:9px">We'll send one real email to make sure it works. After that, invites go out automatically.</div>
          <label style="font-size:12px">Your name (shown in the invite)<input id="ce-name" value="${escapeHtml(S.name)}" style="${inputCss};margin-bottom:9px"></label>
-         <label style="font-size:12px">Send the test to<input id="ce-test" type="email" value="${escapeHtml(S.testTo)}" placeholder="your@email.com" style="${inputCss}"></label>`,
+         <label style="font-size:12px">Send the test to<input id="ce-test" type="email" value="${escapeHtml(S.testTo)}" placeholder="your@email.com" style="${inputCss};margin-bottom:9px"></label>
+         <div style="border-top:.5px solid var(--border);margin-top:2px;padding-top:9px">
+           <label style="font-size:12px">Advisor access key <span style="color:var(--text-3);font-weight:400">(the token advisors paste to read chapters + comment)</span>
+             <div style="font-size:11px;color:var(--text-3);font-weight:400;margin:3px 0 4px;line-height:1.5">Use a <b>least-privilege</b> GitHub token — <b>not</b> your account password/PAT (it gets emailed to every advisor). Create a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a> with access to <b>only</b> <code>dissertation-tracker-data</code> and <b>Contents: Read and write</b>. Leave blank to keep the current one.</div>
+             <input id="ce-advkey" type="password" value="${escapeHtml(S.advkey)}" placeholder="paste the advisor access token (or leave blank)" style="${inputCss}"></label>
+         </div>`,
         backBtn + `<button id="ce-go" class="btn btn-primary" style="padding:5px 12px;font-size:12px"><i class="ti ti-send"></i> Connect &amp; send test</button>` + cancelBtn);
       $('ce-name').oninput = e => S.name = e.target.value;
       $('ce-test').oninput = e => S.testTo = e.target.value;
+      $('ce-advkey').oninput = e => S.advkey = e.target.value;
       $('ce-go').onclick = () => runConnect(S, $('ce-stat'));
       wireCommon();
     };
@@ -2098,6 +2104,10 @@ gh variable set PORTAL_BASE --repo ${dataRepo}</pre>
       await putSecret(etok, pk, sealToBase64, 'SMTP_HOST', host);
       await putSecret(etok, pk, sealToBase64, 'SMTP_PORT', port);
       await putSecret(etok, pk, sealToBase64, 'SMTP_FROM', (S.from || user).trim());   // sender ≠ login for Brevo
+      // Advisor access token (emailed to advisors so they can read + comment). Only overwrite when the
+      // owner supplied one — a blank field keeps the existing key. This is a separate, least-privilege
+      // token, never the owner's account PAT. Not persisted in the browser (lives only in S.advkey).
+      if ((S.advkey || '').trim()) await putSecret(etok, pk, sealToBase64, 'ADVISOR_KEY', S.advkey.trim());
       if (name) await putSecret(etok, pk, sealToBase64, 'SMTP_FROM_NAME', name);
       if (name) await setVariable(etok, 'AUTHOR_NAME', name);
       await setVariable(etok, 'PORTAL_BASE', portalBase());
