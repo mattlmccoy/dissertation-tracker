@@ -4,13 +4,36 @@
 import { anchorFromSelection } from './anchor.js?v=59fa063';
 import { startTour, tourSeen } from './tour.js?v=59fa063';
 
-// Short first-run tour of the reading + commenting surface. Non-destructive spotlight only.
+// A sample chapter shown ONLY during the tour, so the reading + commenting features have real-looking
+// content to point at even before any real chapter is released. Restored when the tour ends. The tour
+// only spotlights and explains — nothing here is ever sent or saved.
+function loadDemoChapter(){
+  const el = document.getElementById('read'); if (!el) return () => {};
+  const prev = el.innerHTML;
+  const fig = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="520" height="200"><rect width="520" height="200" fill="#e9e7e1"/><text x="260" y="106" font-family="sans-serif" font-size="16" fill="#8f8d84" text-anchor="middle">Sample figure</text></svg>');
+  el.innerHTML = `<article id="doc">
+    <h1>Chapter 3 · Sample (tour preview)</h1>
+    <p id="tour-demo-select">This preview chapter shows how reviewing works. Lorem ipsum dolor sit amet, consectetur adipiscing elit; radio-frequency heating enables rapid, volumetric energy delivery through a dielectric medium. Select any words here to attach a comment.</p>
+    <p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi.</p>
+    <figure><img alt="Sample figure" src="${fig}"><figcaption>Figure 3.1. A sample figure — click it to comment on the figure itself.</figcaption></figure>
+    <p>Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
+    <table><caption>Table 3.1. Sample results.</caption><thead><tr><th>Case</th><th>Value</th></tr></thead>
+      <tbody><tr><td>Baseline</td><td>12.4</td></tr><tr><td>Compensated</td><td>4.1</td></tr></tbody></table>
+    <p>Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium totam rem aperiam.</p></article>`;
+  return () => { el.innerHTML = prev; };
+}
+// First-run tour of the reading + commenting surface. Non-destructive spotlight, on demo content.
 const ADVISOR_TOUR = [
-  { sel:'#nav', title:'Released chapters', body:'The chapters the author shared with you. Click one to open it on a clean reading page.' },
-  { sel:'#read', title:'Read and mark up', body:'Select any text, or click a figure, to attach a note right where it matters.' },
-  { sel:'#comments', title:'Your notes', body:'Everything you leave shows here, private to the author. In a note you can also propose exact wording for them to accept in one click.' },
+  { sel:'#nav', title:'Released chapters', body:'The chapters the author shared with you. Click one to open it. (We loaded a sample chapter so you can see the rest of the tour.)' },
+  { sel:'#doc h1', title:'The reading view', body:'Chapters open on a clean, distraction-free page.' },
+  { sel:'#tour-demo-select', title:'Comment on text', body:'Select any words to attach a comment exactly there — the author sees it privately.' },
+  { sel:'#doc figure', title:'Comment on a figure', body:'Click a figure to leave a note about that figure specifically.' },
+  { sel:'#doc table', title:'Everything is reviewable', body:'Tables, equations, and figures can all be commented on — not just paragraphs.' },
+  { sel:'#comments', title:'Your notes', body:'Your comments and suggested edits collect here. In a note you can propose exact wording for the author to accept in one click.' },
+  { sel:'#topbar', title:'Submit & settings', body:'Submit your comments when you\'re done, and switch light or dark mode — up here.' },
+  { sel:'#adv-tour-btn', title:'Replay anytime', body:'Reopen this tour whenever you like with the ? button.' },
 ];
-function launchAdvisorTour(){ startTour(ADVISOR_TOUR, { storageKey:'tour-advisor-v1' }); }
+function launchAdvisorTour(){ const restore = loadDemoChapter(); startTour(ADVISOR_TOUR, { storageKey:'tour-advisor-v1', onDone: restore }); }
 
 // --- comment model (self-contained) ---
 let _seq = 0; const nid = () => `c_${Date.now().toString(36)}_${(_seq++).toString(36)}`;
