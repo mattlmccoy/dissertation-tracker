@@ -197,7 +197,9 @@ async function loadRelease(){
   function apply(j){ if (j && typeof j === 'object' && !(RELEASE_ID in j)){ revoked = true; return; }   // no gate entry → this reviewer was removed
     released = (j?.[RELEASE_ID]?.released) || []; responsesReleased = !!(j?.[RELEASE_ID]?.responses_released); }
 }
+function doRefresh(){ try{ sessionStorage.setItem('_resume', current||''); }catch(e){} const u = new URL(location.href); u.searchParams.set('_r', Date.now()); location.replace(u.toString()); }   // reload for a fresh deploy, keeping your place
 async function loadChapter(ch){
+  if (ch === '__outline__'){ loadOutline(); return; }   // the outline isn't a real chapter
   current = ch; review = loadLocal(ch);
   read.innerHTML = `<div class="empty"><i class="ti ti-loader-2" style="font-size:22px"></i><div style="margin-top:8px">Loading Chapter ${chMeta(ch).n}…</div></div>`;
   document.getElementById('nav').style.display=''; document.getElementById('comments').style.display='';
@@ -688,6 +690,7 @@ function renderTopbar(){ const m=chMeta(current);
     <button class="chsel" id="chsel"><i class="ti ti-book-2"></i><span>Chapter ${m.n} · ${shortTitle(m.title)}</span><i class="ti ti-chevron-down" style="font-size:15px;color:var(--text-3)"></i></button>
     <div class="search"><i class="ti ti-search"></i><input id="search" placeholder="Search chapter"></div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:3px">
+      <button class="icbtn" id="btn-refresh" title="Refresh — keeps your place"><i class="ti ti-refresh"></i></button>
       <button class="icbtn" id="btn-theme" title="Theme"><i class="ti ti-moon"></i></button>
       <button class="btn btn-primary" id="btn-submit"><i class="ti ti-send"></i>Submit comments</button>
       <button class="icbtn" id="btn-export" title="Download this chapter (Word · Markdown · PDF)"><i class="ti ti-file-export"></i></button>
@@ -896,6 +899,7 @@ function renderOutlineTopbar(){
     <button class="icbtn" id="btn-home" title="All chapters"><i class="ti ti-layout-grid"></i></button>
     <button class="chsel" id="chsel" style="cursor:default"><i class="ti ti-list-tree"></i><span>Proposed outline</span></button>
     <div style="margin-left:auto;display:flex;align-items:center;gap:3px">
+      <button class="icbtn" id="btn-refresh" title="Refresh — keeps your place"><i class="ti ti-refresh"></i></button>
       <button class="icbtn" id="btn-theme" title="Theme"><i class="ti ti-moon"></i></button>
       <button class="btn btn-primary" id="btn-submit"><i class="ti ti-send"></i>Submit comments</button>
       <button class="icbtn" id="btn-key" title="Access key"><i class="ti ti-key"></i></button></div>`;
@@ -1061,7 +1065,8 @@ function setupMobileSheet(){
 }
 // ---------- boot ----------
 async function boot(){ keyBad = false; revoked = false; await loadRelease(); if (revoked){ showRevoked(); return; } if (keyBad && tok()){ showKeyExpired(); return; }
-  if (SHARED && tok() && !reviewerName()){ showNameEntry(); return; } enterHome();
+  if (SHARED && tok() && !reviewerName()){ showNameEntry(); return; }
+  const _r = sessionStorage.getItem('_resume'); if (_r){ sessionStorage.removeItem('_resume'); loadChapter(_r); } else enterHome();   // a refresh returns you to where you were (loadChapter routes __outline__ to the outline)
   startOutbox(); retryPending(); renderBanner();
   ensureTourButton();
   if (!tourSeen('tour-advisor-v1')) setTimeout(() => { try { launchAdvisorTour(); } catch {} }, 1400); }
@@ -1143,4 +1148,5 @@ window.addEventListener('keydown',e=>{
     case '?': toggleHelp(); break;
   }
 });
+document.addEventListener('click', e => { if (e.target.closest('#btn-refresh')) doRefresh(); });   // refresh buttons across every topbar
 boot();

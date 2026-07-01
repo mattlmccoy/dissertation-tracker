@@ -100,6 +100,7 @@ function renderTopbar(){
     <button class="chsel" id="chsel"><i class="ti ti-book-2"></i><span>Chapter ${m.n} · ${shortTitle(m.title)}</span><i class="ti ti-chevron-down" style="font-size:15px;color:var(--text-3)"></i></button>
     <div class="search"><i class="ti ti-search"></i><input id="search" placeholder="Search chapter · ${MOD}\\ for all"></div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:3px">
+      <button class="icbtn" id="btn-refresh" title="Refresh — keeps your place"><i class="ti ti-refresh"></i></button>
       <button class="icbtn" id="btn-focus" title="Focus mode (f)"><i class="ti ti-arrows-diagonal-minimize-2"></i></button>
       <button class="icbtn" id="btn-history" title="History"><i class="ti ti-history"></i></button>
       <button class="icbtn" id="btn-theme" title="Theme"><i class="ti ti-moon"></i></button>
@@ -129,7 +130,9 @@ function openChapterMenu(){
   document.body.appendChild(menu);
   setTimeout(() => document.addEventListener('click', function h(e){ if (!menu.contains(e.target) && e.target.id!=='chsel'){ menu.remove(); document.removeEventListener('click', h); } }), 0);
 }
-function enterChapter(ch){ current = ch; review = loadLocalReview(ch); localStorage.setItem('lastChapter', ch);
+function doRefresh(){ try{ sessionStorage.setItem('_resume', current||''); }catch(e){} const u = new URL(location.href); u.searchParams.set('_r', Date.now()); location.replace(u.toString()); }   // reload for a fresh deploy, keeping your place
+function enterChapter(ch){ if (ch === '__outline__'){ localStorage.setItem('lastChapter', ch); loadOwnerOutline(); return; }   // the outline isn't a real chapter — don't try to fetch it
+  current = ch; review = loadLocalReview(ch); localStorage.setItem('lastChapter', ch);
   document.getElementById('nav').style.display = ''; document.getElementById('comments').style.display = '';
   renderTopbar(); renderComments(); loadChapter(ch); }
 const selectChapter = enterChapter;
@@ -1387,12 +1390,13 @@ function enterHome(){
 }
 // ---------- proposed outline (read-only view of what advisors see) ----------
 async function loadOwnerOutline(){
-  current = '__outline__'; review = loadLocalReview('__outline__');
+  current = '__outline__'; review = loadLocalReview('__outline__'); localStorage.setItem('lastChapter', '__outline__');
   document.getElementById('nav').style.display = 'none';
   document.getElementById('comments').style.display = '';
   document.getElementById('topbar').innerHTML = `<button class="icbtn" id="ol-back" title="Home"><i class="ti ti-arrow-left"></i></button>
     <strong style="font-size:15px;font-weight:600;margin-left:4px">Proposed outline</strong>
-    <button class="icbtn" id="btn-theme" style="margin-left:auto"><i class="ti ti-moon"></i></button>`;
+    <button class="icbtn" id="btn-refresh" title="Refresh — keeps your place" style="margin-left:auto"><i class="ti ti-refresh"></i></button>
+    <button class="icbtn" id="btn-theme"><i class="ti ti-moon"></i></button>`;
   document.getElementById('ol-back').onclick = enterHome;
   document.getElementById('btn-theme').onclick = toggleTheme;
   read.innerHTML = `<div class="empty">Loading outline…</div>`;
@@ -2399,6 +2403,7 @@ function setupMobileSheet(){
 }
 // ---------- boot ----------
 setupMobileSheet();
-enterHome();
+document.addEventListener('click', e => { if (e.target.closest('#btn-refresh')) doRefresh(); });   // refresh buttons across every topbar
+(() => { const r = sessionStorage.getItem('_resume'); if (r){ sessionStorage.removeItem('_resume'); enterChapter(r); } else enterHome(); })();   // a refresh returns you to where you were
 document.addEventListener('mouseover', e => { const c = e.target.closest?.('.chcard'); if (c) c.style.borderColor='var(--border-2)'; });
 document.addEventListener('mouseout', e => { const c = e.target.closest?.('.chcard'); if (c) c.style.borderColor='var(--border)'; });
