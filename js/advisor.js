@@ -1069,7 +1069,8 @@ async function boot(){ keyBad = false; revoked = false; await loadRelease(); if 
   const _r = sessionStorage.getItem('_resume'); if (_r){ sessionStorage.removeItem('_resume'); loadChapter(_r); } else enterHome();   // a refresh returns you to where you were (loadChapter routes __outline__ to the outline)
   startOutbox(); retryPending(); renderBanner();
   ensureTourButton();
-  if (!tourSeen('tour-advisor-v1')) setTimeout(() => { try { launchAdvisorTour(); } catch {} }, 1400); }
+  // Only auto-run once the reviewer is actually in (has an access key) — never over the login screen.
+  if (tok() && !tourSeen('tour-advisor-v1')) setTimeout(() => { try { launchAdvisorTour(); } catch {} }, 1400); }
 // Floating replay button (always available); appended once.
 function ensureTourButton(){
   if (document.getElementById('adv-tour-btn')) return;
