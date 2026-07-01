@@ -43,6 +43,7 @@ function mergeReviews(remote, local){
       ...(thread.length?{thread}:{}) };
   });
   if (deleted.size) out.deleted = [...deleted]; else delete out.deleted;  // persist tombstones so deletes survive future syncs
+  const la=[out.last_active, remote&&remote.last_active, local&&local.last_active].filter(Boolean).sort().pop(); if(la) out.last_active=la;   // keep the most recent activity stamp
   delete out.pending;                      // pending is a local-only marker, never written to the remote payload
   return out;
 }
@@ -130,7 +131,7 @@ async function syncDown(){ const t = tok(); if (!t) return;
 // the "unsaved" banner is driven purely by sync OUTCOME — syncUp clears it on a confirmed PUT
 // and raises it on a real failure, and the 30s heartbeat surfaces genuinely-stuck chapters.
 // markDirty never shows it, so a normal (even slow) save never flashes a warning.
-function markDirty(){ review.pending = true; save(); syncUpSoon(); }
+function markDirty(){ review.pending = true; review.last_active = new Date().toISOString(); save(); syncUpSoon(); }
 function syncUpSoon(){ if (!tok()) return; clearTimeout(syncTimer); syncTimer = setTimeout(() => syncUp(), 1200); }
 // read-modify-merge push: returns true only when GitHub confirms (2xx). Never clobbers owner edits.
 async function syncUp(){ const t = tok(); if (!t) return false;

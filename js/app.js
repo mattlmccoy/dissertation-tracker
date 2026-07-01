@@ -274,7 +274,7 @@ async function loadAdvisorComments(ch){
       let json = null;
       if (dev){ const r = await fetch(`./advisor/${a}/${ch}.json`); if (r.ok) json = await r.json(); }
       else { const t = tok(); if (!t) continue; json = (await getJson(t, `advisor/${a}/${ch}.json`)).json; }
-      (json?.comments||[]).forEach(c => { if (c.status!=='resolved') advisorComments.push({ ...c, _advisor:a }); });
+      (json?.comments||[]).forEach(c => { if (c.status!=='open' && c.status!=='resolved') advisorComments.push({ ...c, _advisor:a }); });   // hide unsubmitted drafts — the advisor's Submit is the gate
     } catch(e){}
   }
   if (!dev){ const t = tok(); if (t){ try { advNotesState = await loadAdvisorNotes(t); } catch(e){ advNotesState = { notes:{}, sha:null }; } } }
@@ -1135,6 +1135,7 @@ const rand4 = () => Math.random().toString(36).slice(2,6);
 async function loadAdvisorsRegistry(t){ const { json, sha } = await getJson(t, 'advisors.json').catch(() => ({ json:null, sha:null }));
   const reg = json && Array.isArray(json.advisors) ? json : { advisors: [] }; return { reg, sha }; }
 const fmtDate = ts => { if(!ts) return ''; const d=new Date(ts); if(isNaN(d)) return ''; return d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); };
+const relTime = ts => { if(!ts) return ''; const s=(Date.now()-new Date(ts).getTime())/1000; if(isNaN(s)) return ''; if(s<75) return 'just now'; if(s<3600) return Math.round(s/60)+'m ago'; if(s<86400) return Math.round(s/3600)+'h ago'; return Math.round(s/86400)+'d ago'; };
 function suggHtml(c){
   if (!c.edit) return '';
   const e = c.edit, find = escapeHtml((e.find||'').slice(0,140)), repl = escapeHtml((e.replacement||'').slice(0,240));
@@ -1741,16 +1742,26 @@ async function openReleasePanel(){
   const inbox = {};   // inbox[fileId] = [{chapter, comment}]
   let advFilePaths = [];
   try { const paths = await ghTree(t); advFilePaths = paths.filter(p => /^advisor\/[^/]+\/.+\.json$/.test(p)); } catch(e){}
+  const pres = {};   // per-advisor presence: unsubmitted-draft count + last-active stamp (drafts stay hidden until Submit)
   await Promise.all(advFilePaths.map(async p => {
     const m = p.match(/^advisor\/([^/]+)\/(.+)\.json$/); const id = m[1], ch = m[2];
-    try { const r = await getJson(t, p); (r.json?.comments||[]).forEach(c => (inbox[id] = inbox[id]||[]).push({ chapter:ch, c })); } catch(e){}
+    try { const r = await getJson(t, p);
+      const drafts = (r.json?.comments||[]).filter(c => c.status==='open').length;
+      pres[id] = { drafts: (pres[id]?.drafts||0) + drafts, lastActive: [pres[id]?.lastActive, r.json?.last_active].filter(Boolean).sort().pop() };
+      inbox[id] = inbox[id] || [];   // an advisor with only drafts still shows up (with their presence)
+      (r.json?.comments||[]).forEach(c => { if (c.status!=='open') inbox[id].push({ chapter:ch, c }); }); } catch(e){}
   }));
   const idLabel = id => ADVISOR_NAME[id] || (/^general-/.test(id) ? (inbox[id]?.[0]?.c.author || 'Lab reviewer') : (rel[id]?.name || id));
   // inbox sections: named advisors first, then per-person lab reviewers
   const inboxIds = Object.keys(inbox).sort((a,b) => (/^general-/.test(a)?1:0) - (/^general-/.test(b)?1:0) || idLabel(a).localeCompare(idLabel(b)));
   const rows = CHAPTERS.map(c => `<tr><td>${c.n}. ${escapeHtml(shortTitle(c.title))}</td>${advs.map(a => `<td style="text-align:center"><input type="checkbox" data-a="${a}" data-ch="${c.id}" ${(rel[a].released||[]).includes(c.id)?'checked':''}></td>`).join('')}</tr>`).join('');
   const unreadOf = a => (inbox[a]||[]).filter(({c}) => !c.read && c.status==='submitted').length;
-  const advHeadHtml = a => { const unread = unreadOf(a); return `${unread?`<span class="chip" style="background:var(--warn-bg);color:var(--warn)">${unread} unread</span> <button class="btn rel-readall" data-a="${a}" style="padding:2px 9px;font-size:11.5px"><i class="ti ti-checks"></i>Mark all read</button>`:`<span class="chip" style="background:var(--success-bg);color:var(--success)"><i class="ti ti-check" style="font-size:12px"></i> all read</span>`}`; };
+  const advHeadHtml = a => { const unread = unreadOf(a); const pr = pres[a]||{};
+    const active = pr.lastActive ? (Date.now()-new Date(pr.lastActive).getTime())/1000 < 120 : false;
+    const presence = (pr.drafts>0 || pr.lastActive)
+      ? `<span class="chip" title="Unsubmitted drafts — hidden from you until the reviewer clicks Submit" style="background:${active?'var(--success-bg)':'var(--bg-3)'};color:${active?'var(--success)':'var(--text-3)'}">${active?'<i class="ti ti-pencil" style="font-size:11px;margin-right:3px"></i>active now':`active ${relTime(pr.lastActive)}`}${pr.drafts>0?` · ${pr.drafts} drafting`:''}</span> `
+      : '';
+    return `${presence}${unread?`<span class="chip" style="background:var(--warn-bg);color:var(--warn)">${unread} unread</span> <button class="btn rel-readall" data-a="${a}" style="padding:2px 9px;font-size:11.5px"><i class="ti ti-checks"></i>Mark all read</button>`:`<span class="chip" style="background:var(--success-bg);color:var(--success)"><i class="ti ti-check" style="font-size:12px"></i> all read</span>`}`; };
   const cmtRow = (a, chapter, c) => `<div class="rel-row${c.read?' is-read':''}" data-a="${a}" data-ch="${chapter}" data-cid="${c.id}" data-q="${escapeHtml((c.anchor?.quote||'').slice(0,60))}">
       <label class="rel-read"><input type="checkbox" class="rel-readbox" ${c.read?'checked':''}></label>
       <div class="rel-row-main">
