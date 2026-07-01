@@ -564,6 +564,12 @@ function keyWords(s){ return normText(s)
   .replace(/^(figure|fig\.?|table|tab\.?|eq\.?|equation)\s*[\d.]+\s*[:.]?\s*/i,'')
   .replace(/\[[^\]]*\]/g,' ').replace(/[^a-z0-9]+/g,' ').trim().split(' ').filter(w=>w.length>=3); }
 function locateAnchor(c){
+  if(current==='__outline__'){   // outline comments live on .ol-node/.ol-cmt buttons, not in #doc
+    const q=c.anchor?.quote||'', s=c.anchor?.section||'';
+    const btn=[...document.querySelectorAll('.ol-cmt')].find(b=>b.dataset.node===q && b.dataset.sec===s);
+    if(btn){ btn.closest('.ol-chapter')?.classList.add('open'); return btn.closest('.ol-node, .ol-chead')||btn; }
+    return null;
+  }
   const mark=document.querySelector(`#doc .cmark[data-id="${c.id}"], #doc .cmark[data-aid="${c.id}"], #doc figure[data-cid="${c.id}"], #doc .cmark-el[data-cid="${c.id}"]`); if(mark) return mark;
   const quote=c.anchor?.quote||'';
   const cands=[...document.querySelectorAll('#doc p, #doc li, #doc figure, #doc figcaption, #doc h2, #doc h3, #doc td, #doc blockquote')];
