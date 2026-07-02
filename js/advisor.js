@@ -432,7 +432,7 @@ function showPopover(anchor,rects,defaultTag='wording',figEl=null){
     else if(mode==='insert') edit={op:'insert',find:anchor.quote,position:'after',replacement:repl.value};
     else if(mode==='delete') edit={op:'delete',find:anchor.quote,replacement:''};
     if(edit&&mode!=='delete'&&!repl.value.trim()){ flash('Enter the '+(mode==='insert'?'text to insert':'replacement text')+'.'); return; }
-    review=addComment(review,{ anchor:pending, kind:edit?'suggestion':pending.kind, tag:edit?'edit':tag, body:body.value, edit, author:authorId() });
+    review=addComment(review,{ anchor:pending, kind:edit?'suggestion':pending.kind, tag:edit?'edit':tag, body:body.value, edit, author:authorId(), status:'submitted' });
     markDirty(); renderComments(); buildNav(); paintHighlights(); pop.remove(); window.getSelection().removeAllRanges(); };
 }
 
@@ -737,14 +737,12 @@ function renderTopbar(){ const m=chMeta(current);
     <div style="margin-left:auto;display:flex;align-items:center;gap:3px">
       <button class="icbtn" id="btn-refresh" title="Refresh — keeps your place"><i class="ti ti-refresh"></i></button>
       <button class="icbtn" id="btn-theme" title="Theme"><i class="ti ti-moon"></i></button>
-      <button class="btn btn-primary" id="btn-submit"><i class="ti ti-send"></i>Submit comments</button>
       <button class="icbtn" id="btn-export" title="Download this chapter (Word · Markdown · PDF)"><i class="ti ti-file-export"></i></button>
       <button class="icbtn" id="btn-key" title="Access key"><i class="ti ti-key"></i></button>
     </div>`;
   document.getElementById('btn-home').onclick=enterHome;
   document.getElementById('chsel').onclick=openChapterMenu;
   document.getElementById('btn-theme').onclick=()=>{ document.documentElement.classList.toggle('dark'); localStorage.setItem('theme',document.documentElement.classList.contains('dark')?'dark':'light'); };
-  document.getElementById('btn-submit').onclick=submitComments;
   document.getElementById('btn-export').onclick=()=>exportDialog(current);
   document.getElementById('btn-key').onclick=()=>{ const v=prompt('Access key:',tok()||''); if(v!==null){ if(v.trim()) localStorage.setItem('ghpat',v.trim()); else localStorage.removeItem('ghpat'); boot(); } };
   const si=document.getElementById('search'); si.addEventListener('keydown',e=>{ if(e.key==='Enter') runSearch(si.value); if(e.key==='Escape'){ si.value=''; clearSearch(); } });
@@ -951,11 +949,9 @@ function renderOutlineTopbar(){
     <div style="margin-left:auto;display:flex;align-items:center;gap:3px">
       <button class="icbtn" id="btn-refresh" title="Refresh — keeps your place"><i class="ti ti-refresh"></i></button>
       <button class="icbtn" id="btn-theme" title="Theme"><i class="ti ti-moon"></i></button>
-      <button class="btn btn-primary" id="btn-submit"><i class="ti ti-send"></i>Submit comments</button>
       <button class="icbtn" id="btn-key" title="Access key"><i class="ti ti-key"></i></button></div>`;
   document.getElementById('btn-home').onclick=enterHome;
   document.getElementById('btn-theme').onclick=()=>{ document.documentElement.classList.toggle('dark'); localStorage.setItem('theme',document.documentElement.classList.contains('dark')?'dark':'light'); };
-  document.getElementById('btn-submit').onclick=submitComments;
   document.getElementById('btn-key').onclick=()=>{ const v=prompt('Access key:',tok()||''); if(v!==null){ if(v.trim()) localStorage.setItem('ghpat',v.trim()); else localStorage.removeItem('ghpat'); boot(); } };
 }
 function renderOutline(data){
@@ -993,12 +989,6 @@ function outlineComment(btn, label, section){
     const n=review.comments.filter(c=>c.anchor?.quote===label && c.anchor?.section===section).length; btn.innerHTML=`<i class="ti ti-message"></i>${n}`;
     renderComments(); flash('Comment added — use Submit comments when finished.'); };
 }
-async function submitComments(){ const t=tok(); if(!t){ flash('Add your access key first.'); return; } const open=review.comments.filter(c=>c.status==='open'); if(!open.length){ flash('No new comments to submit.'); return; }
-  flash('Submitting…'); open.forEach(c=>{ review=updateComment(review,c.id,{status:'submitted'}); }); review.pending=true; save(); renderComments();
-  const ok = await syncUp();                       // syncUp returns true ONLY when GitHub confirms the write
-  renderBanner();
-  if (ok) flash(`Submitted ${open.length} comment${open.length>1?'s':''}. Thank you!`);
-  else flash(`Saved on this device — not uploaded yet. We'll keep retrying; please keep this browser open and don't clear its data.`, 5200); }
 function runSearch(q){ clearSearch(); if(!q.trim()) return; const re=new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi'); let first=null;
   document.querySelectorAll('#doc p').forEach(p=>{ if(re.test(p.textContent)){ p.innerHTML=p.innerHTML.replace(re,m=>`<mark style="background:var(--warn-bg)">${m}</mark>`); if(!first) first=p; } }); if(first) first.scrollIntoView({behavior:'smooth',block:'center'}); }
 function clearSearch(){ document.querySelectorAll('#doc mark:not(.cmark)').forEach(m=>m.replaceWith(...m.childNodes)); }
