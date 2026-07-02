@@ -29,7 +29,7 @@ function loadDemoChapter(){
         <div style="font-size:11px;color:var(--text-3)">§ Chapter 3 · on "reviewing works"</div>
         <div style="font-size:13px;margin:5px 0 7px;color:var(--text)">Consider clarifying this sentence for a general reader.</div>
         <span class="chip" style="background:var(--wording-bg);color:var(--wording)">wording</span></div>
-      <button id="tour-demo-submit" class="btn btn-primary" style="width:100%;justify-content:center"><i class="ti ti-send"></i>Submit comments</button>`;
+      `;
   }
   // Teardown must RE-RENDER the real view (not paste back innerHTML) — restoring an HTML string
   // creates fresh nodes with no event handlers, leaving the page looking right but unclickable.
@@ -44,7 +44,7 @@ const ADVISOR_TOUR = [
   { sel:'#doc figure', title:'Comment on a figure', body:'Click the sample figure to comment on it, and you can even draw a box or circle to point at the issue.', pin:'bl' },
   { sel:'#doc table', title:'Everything is reviewable', body:'Tables, equations, and figures can all be commented on, not just paragraphs.' },
   { sel:'#tour-demo-note', title:'Your notes', body:'Every note you leave collects here (this one is a sample). In a note you can also propose exact replacement wording for the author to accept in one click.' },
-  { sel:'#tour-demo-submit', title:'Submit when done', body:'Submit comments sends them all to the author. Until you submit they stay private drafts, and you can always come back and add more later.' },
+  { sel:'#tour-demo-note', title:'Shared instantly', body:'Every comment is shared with the author the moment you add it — there is no submit step. You can edit or delete any comment afterward, and their replies appear here automatically.' },
   { sel:'#adv-tour-btn', title:'Replay anytime', body:'Reopen this tour whenever you like with the ? button.' },
 ];
 function launchAdvisorTour(){ const restore = loadDemoChapter(); startTour(ADVISOR_TOUR, { storageKey:'tour-advisor-v1', onDone: restore }); }
@@ -52,7 +52,6 @@ function launchAdvisorTour(){ const restore = loadDemoChapter(); startTour(ADVIS
 const ADVISOR_OUTLINE_TOUR = [
   { sel:'.ol-chapter', title:'The proposed structure', body:'This is the author\'s planned outline. Click a chapter to expand its sections and subsections.' },
   { sel:'.ol-cmt', title:'Comment on any part', body:'Use the comment button on any chapter, section, or subsection to weigh in on the structure before the full chapters arrive.' },
-  { sel:'#btn-submit', title:'Submit when done', body:'Outline comments submit the same way as chapter comments.' },
 ];
 function launchAdvisorOutlineTour(){ startTour(ADVISOR_OUTLINE_TOUR, { storageKey:'tour-advisor-outline-v1' }); }
 
@@ -793,7 +792,7 @@ function enterHome(){
       <div style="font-size:11px;color:var(--text-2)">${n?`${n} comment${n>1?'s':''}`:'open to review'}</div></div>`; }).join('');
   const oc=JSON.parse(localStorage.getItem(localKey('__outline__'))||'null'); const ocn=oc?.comments?.length||0;
   read.innerHTML=`<div style="max-width:900px;margin:0 auto;padding:28px 24px 90px">
-      <div style="font-size:13px;color:var(--text-2);margin-bottom:20px">Welcome, ${escapeHtml(displayName())}. The chapters released for your review are below. Open one to read it and leave comments or suggested edits; use <b>Submit comments</b> when you're done.</div>
+      <div style="font-size:13px;color:var(--text-2);margin-bottom:20px">Welcome, ${escapeHtml(displayName())}. The chapters released for your review are below. Open one to read it and leave comments or suggested edits — each one is shared with the author as soon as you add it.</div>
       <button id="outline-card" style="display:flex;align-items:center;gap:13px;width:100%;text-align:left;border:.5px solid var(--accent);border-radius:var(--r-lg);padding:14px 16px;margin-bottom:26px;background:var(--accent-bg);cursor:pointer;font:inherit;color:var(--text)">
         <i class="ti ti-list-tree" style="font-size:22px;color:var(--accent)"></i>
         <div style="min-width:0"><div style="font-size:14px;font-weight:500">Proposed dissertation outline</div>
@@ -1001,7 +1000,7 @@ function outlineComment(btn, label, section){
     review=addComment(review,{ anchor:{quote:label, section}, kind:'text', tag:'suggestion', body:v, author:authorId() });
     markDirty(); box.remove();
     const n=review.comments.filter(c=>c.anchor?.quote===label && c.anchor?.section===section).length; btn.innerHTML=`<i class="ti ti-message"></i>${n}`;
-    renderComments(); flash('Comment added — use Submit comments when finished.'); };
+    renderComments(); flash('Comment added — shared with the author.'); };
 }
 function runSearch(q){ clearSearch(); if(!q.trim()) return; const re=new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi'); let first=null;
   document.querySelectorAll('#doc p').forEach(p=>{ if(re.test(p.textContent)){ p.innerHTML=p.innerHTML.replace(re,m=>`<mark style="background:var(--warn-bg)">${m}</mark>`); if(!first) first=p; } }); if(first) first.scrollIntoView({behavior:'smooth',block:'center'}); }
