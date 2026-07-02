@@ -72,7 +72,19 @@ function loadDemoChapterOwner(){
   review = addComment(review, { kind:'suggestion', tag:'wording', anchor:{ quote:'' }, body:'Tighten this phrasing for a general reader.' });
   const sc = review.comments[0]; sc.status = 'staged'; sc.decision = 'approve'; sc.staged_edit = { before:'quis nostrud exercitation ullamco laboris', after:'clearer, simpler wording' };
   renderComments(); paintHighlights(); renderStagedEdits(doc); showApproveBar();
-  return () => { review = savedReview; advisorComments = savedAdv; previewing = savedPrev;
+  // This is a dead preview, not the live tool: swallow clicks on every actionable control in the
+  // sample surfaces so nothing (Queue for merge, Resolution, Send to Claude, a comment save) ever
+  // runs or writes. The tour's own controls live in .tour-overlay, so they still work. Mirrors the
+  // way the advisor demo's Submit button is inert.
+  const demoGuard = e => {
+    if (e.target.closest('.tour-overlay')) return;                                       // let Next/Back/Skip through
+    if (e.target.closest('#btn-send')){ e.preventDefault(); e.stopPropagation(); return; } // topbar Send to Claude: no real send in the demo
+    if (!e.target.closest('#approvebar, #comments, #read, .popover, .figmk-back')) return;
+    if (e.target.closest('button, .btn, [data-act], .aj, a, input, select')){ e.preventDefault(); e.stopPropagation(); }
+  };
+  document.addEventListener('click', demoGuard, true);
+  return () => { document.removeEventListener('click', demoGuard, true);
+    review = savedReview; advisorComments = savedAdv; previewing = savedPrev;
     if (prevReading && CHAPTERS.some(c => c.id === prevCurrent)){ current = prevCurrent; enterChapter(prevCurrent); }
     else { current = prevCurrent; enterHome(); } };
 }
