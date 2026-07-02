@@ -39,37 +39,42 @@ function openTourMenu(){
   setTimeout(() => document.addEventListener('click', function h(e){ if (!m.contains(e.target) && e.target.id!=='btn-tour' && !e.target.closest?.('#btn-tour')){ m.remove(); document.removeEventListener('click', h); } }), 0);
 }
 function launchOwnerTour(){ startTour(OWNER_TOUR, { storageKey:'tour-owner-v1' }); }
-// A throwaway demo chapter (sample advisor comment + a sample staged edit + the approve bar) so the
-// reviewing walkthrough points at the real workflow. Nothing is saved; teardown re-renders the real view.
+// A throwaway demo chapter that runs REAL sample data through the REAL render path (buildAdvCard,
+// renderStagedEdits, showApproveBar) so the walkthrough highlights the actual UI, not a mock-up.
+// Nothing is saved; teardown restores the globals and re-renders the real view.
 function loadDemoChapterOwner(){
   const rd = document.getElementById('read'); if (!rd) return () => {};
-  const prevReading = !!document.querySelector('#doc'); const prevCurrent = current;
-  if (!CHAPTERS.some(c => c.id === current)) current = CHAPTERS[0].id;   // give the topbar a valid chapter name
+  const prevReading = !!document.querySelector('#doc'), prevCurrent = current;
+  const savedReview = review, savedAdv = advisorComments, savedPrev = previewing;
+  if (!CHAPTERS.some(c => c.id === current)) current = CHAPTERS[0].id;   // valid chapter name for the topbar
   document.getElementById('nav').style.display = ''; document.getElementById('comments').style.display = '';
   renderTopbar();   // chapter topbar so #btn-send / #btn-more exist for the tour
-  rd.innerHTML = `<div class="approvebar"><i class="ti ti-git-pull-request"></i><span class="tc-legend">1 edit staged for review</span><button class="btn btn-primary" style="margin-left:auto"><i class="ti ti-git-merge"></i>Queue 1 for merge</button></div>
-    <article id="doc">
+  rd.innerHTML = `<article id="doc">
       <h1>Chapter 3 · Sample (tour preview)</h1>
       <p>This preview chapter shows how reviewing works. Nothing here is saved.</p>
-      <p>Radio-frequency heating delivers energy through a dielectric. <span id="tour-o-staged"><del class="tc-stage">the sample phrasing</del> <ins class="tc-stage">clearer sample phrasing</ins></span> is how a proposed edit reads inline.</p>
+      <p>Radio-frequency heating delivers energy through a dielectric. The reviewer flagged the sample phrasing here, and a proposed edit is staged for it.</p>
       <p>Select any text here to leave your own note or propose exact replacement wording.</p></article>`;
-  const cmt = document.getElementById('comments');
-  if (cmt) cmt.innerHTML = `<div class="lbl"><i class="ti ti-users" style="margin-right:5px"></i>FROM ADVISORS<span style="margin-left:auto">1</span></div>
-    <div id="tour-o-advcard" class="ccard adv" style="border:.5px solid var(--border);border-radius:9px;padding:10px;margin:0 0 10px">
-      <div class="row"><span class="chip advchip"><i class="ti ti-user" style="font-size:11px;margin-right:3px"></i>Sample advisor</span><span class="chip" style="margin-left:5px">wording</span><span class="status" style="margin-left:auto;background:var(--success-bg);color:var(--success)">submitted</span></div>
-      <div class="snip" style="font-size:12.5px;color:var(--text-2);margin:6px 0">"radio-frequency heating delivers energy"</div>
-      <div class="body" style="font-size:13px">Consider defining this for a general reader.</div>
-      <div id="tour-o-resolve" style="display:flex;gap:6px;margin-top:9px"><button class="btn" style="padding:4px 10px;font-size:12px">Addressed</button><button class="btn" style="padding:4px 10px;font-size:12px">Kept as written</button><button class="btn" style="padding:4px 10px;font-size:12px">Noted</button></div>
-    </div>`;
-  return () => { const back = prevCurrent; if (prevReading && CHAPTERS.some(c => c.id === back)) enterChapter(back); else { current = back; enterHome(); } };
+  const doc = document.getElementById('doc');
+  previewing = false;
+  // one real advisor comment -> rendered by the real buildAdvCard (real Jump/Reply/Note/Suggest/Resolution/Send actions)
+  advisorComments = [{ id:'demo-adv', _advisor:'demo', read:false, kind:'text', tag:'wording', status:'submitted',
+    anchor:{ quote:'Radio-frequency heating delivers energy' }, body:'Consider defining this for a general reader.', created_ts:new Date().toISOString() }];
+  // one real staged edit -> painted inline by renderStagedEdits + tallied by the real approve bar
+  review = newReview('__demo__', 'demo');
+  review = addComment(review, { kind:'suggestion', tag:'wording', anchor:{ quote:'' }, body:'Tighten this phrasing for a general reader.' });
+  const sc = review.comments[0]; sc.status = 'staged'; sc.decision = 'approve'; sc.staged_edit = { before:'the sample phrasing', after:'clearer wording' };
+  renderComments(); paintHighlights(); renderStagedEdits(doc); showApproveBar();
+  return () => { review = savedReview; advisorComments = savedAdv; previewing = savedPrev;
+    if (prevReading && CHAPTERS.some(c => c.id === prevCurrent)){ current = prevCurrent; enterChapter(prevCurrent); }
+    else { current = prevCurrent; enterHome(); } };
 }
 const OWNER_CHAPTER_TOUR = [
-  { sel:'#doc h1', title:'Inside a chapter', body:'The reading view. We loaded a sample chapter so you can see the workflow. Nothing here is saved.' },
-  { sel:'#tour-o-advcard', title:'Advisors\' comments land here', body:'Every comment your advisors leave shows in this rail, pinned to the exact spot. Hover a card to reply, add a private note, or suggest an edit.' },
-  { sel:'#tour-o-resolve', title:'Close the loop', body:'Mark each comment Addressed, Kept as written, or Noted. Your advisor sees the outcome in their Responses view.' },
-  { sel:'#btn-send', title:'Hand work to Claude', body:'Send a comment or a whole chapter to Claude to draft the edit or run a review pass. You approve everything before it lands.' },
-  { sel:'#tour-o-staged', title:'Proposed edits show inline', body:'A staged edit appears as tracked changes right in the text, so you read it in place.' },
-  { sel:'.approvebar', title:'Approve, reject, or request changes', body:'Decide on each staged edit, then Queue them for merge. You can preview the rendered result first.' },
+  { sel:'#doc h1', title:'Inside a chapter', body:'The reading view. We loaded a sample chapter with a sample advisor comment and a staged edit so you can see the workflow. Nothing here is saved.' },
+  { sel:'.ccard.adv', title:'Advisors\' comments land here', body:'Every comment your advisors leave shows here, pinned to the exact spot. Its buttons carry the full action set: Jump to it, Reply so they see your answer, add a Private note only you see, Suggest an edit, record a Resolution, or Send it to Claude.' },
+  { sel:'.ccard.adv .a-rec', title:'Record how you handled it', body:'Resolution lets you pick Addressed, Kept as written, or Noted, add an optional note, and Save to advisor. They see the outcome in their Responses view.' },
+  { sel:'.ccard.adv .a-send', title:'Or hand it to Claude', body:'Once you have read a comment, send it to Claude to draft the edit. You still approve the result before anything lands.' },
+  { sel:'#doc ins.tc-stage', title:'Proposed edits show inline', body:'A staged edit shows as tracked changes right in the text, the old wording struck through and the new wording in place.' },
+  { sel:'#approvebar', title:'Approve and merge', body:'The bar tallies what is approved, rejected, or still to decide. Preview the rendered result, then Queue the approved edits for merge.' },
   { sel:'#doc p', title:'Comment yourself too', body:'Select any text to leave your own note or propose exact replacement wording, the same way your advisors do.' },
   { sel:'#btn-more', title:'That is the loop', body:'Read, resolve, approve, merge. Reopen this walkthrough anytime from the More menu.' },
 ];
