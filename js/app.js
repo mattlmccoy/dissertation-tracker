@@ -54,10 +54,10 @@ function loadDemoChapterOwner(){
   const fig = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="520" height="200"><rect width="520" height="200" fill="#e9e7e1"/><text x="260" y="106" font-family="sans-serif" font-size="16" fill="#8f8d84" text-anchor="middle">Sample figure</text></svg>');
   rd.innerHTML = `<article id="doc">
       <h1>Sample chapter (tour preview)</h1>
-      <p id="tour-demo-select">This preview chapter shows how reviewing works. Nothing here is saved.</p>
-      <p>Radio-frequency heating delivers energy through a dielectric medium. The reviewer flagged the sample phrasing here, and a proposed edit is staged for it.</p>
+      <p id="tour-demo-select">This preview chapter shows how reviewing works. Lorem ipsum dolor sit amet, consectetur adipiscing elit; radio-frequency heating enables rapid, volumetric energy delivery through a dielectric medium. Select any words here to attach a comment.</p>
+      <p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi.</p>
       <figure><img alt="Sample figure" src="${fig}"><figcaption>Figure 3.1. A sample figure. Click it to comment on the figure itself.</figcaption></figure>
-      <p>Select any text here to leave your own note, or propose exact replacement wording.</p>
+      <p>Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
       <table><caption>Table 3.1. Sample results.</caption><thead><tr><th>Case</th><th>Value</th></tr></thead>
         <tbody><tr><td>Baseline</td><td>12.4</td></tr><tr><td>Compensated</td><td>4.1</td></tr></tbody></table>
       <p>Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium totam rem aperiam.</p></article>`;
@@ -66,11 +66,11 @@ function loadDemoChapterOwner(){
   try { wireFigures(doc); } catch {}   // make the sample figure + table clickable, exactly like a real chapter
   // one real advisor comment -> rendered by the real buildAdvCard (real Jump/Reply/Note/Suggest/Resolution/Send actions)
   advisorComments = [{ id:'demo-adv', _advisor:'demo', read:false, kind:'text', tag:'wording', status:'submitted',
-    anchor:{ quote:'Radio-frequency heating delivers energy' }, body:'Consider defining this for a general reader.', created_ts:new Date().toISOString() }];
+    anchor:{ quote:'radio-frequency heating enables rapid, volumetric energy delivery' }, body:'Consider defining this for a general reader.', created_ts:new Date().toISOString() }];
   // one real staged edit -> painted inline by renderStagedEdits + tallied by the real approve bar
   review = newReview('__demo__', 'demo');
   review = addComment(review, { kind:'suggestion', tag:'wording', anchor:{ quote:'' }, body:'Tighten this phrasing for a general reader.' });
-  const sc = review.comments[0]; sc.status = 'staged'; sc.decision = 'approve'; sc.staged_edit = { before:'the sample phrasing', after:'clearer wording' };
+  const sc = review.comments[0]; sc.status = 'staged'; sc.decision = 'approve'; sc.staged_edit = { before:'quis nostrud exercitation ullamco laboris', after:'clearer, simpler wording' };
   renderComments(); paintHighlights(); renderStagedEdits(doc); showApproveBar();
   return () => { review = savedReview; advisorComments = savedAdv; previewing = savedPrev;
     if (prevReading && CHAPTERS.some(c => c.id === prevCurrent)){ current = prevCurrent; enterChapter(prevCurrent); }

@@ -353,6 +353,7 @@ body.focusmode #doc{max-width:760px}
 #moremenu .mmi i{font-size:16px;color:var(--text-2)}
 .tour-overlay{position:fixed;inset:0;z-index:9999;pointer-events:none}
 .tour-overlay .tour-cut{position:fixed;border-radius:8px;box-shadow:0 0 0 9999px rgba(0,0,0,.55);transition:all .18s ease;pointer-events:none}
+body.tour-active .popover,body.tour-active .figmk-back{z-index:10001}   /* lift the comment box + figure-markup above the tour dim (mirrors css/reader.css) */
 .tour-overlay .tour-tip{position:fixed;background:var(--bg);color:var(--text);border:.5px solid var(--border);border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.25);padding:12px 13px;pointer-events:auto;font-size:12.5px;line-height:1.5}
 .tour-overlay .tour-tip-title{font-weight:600;font-size:13px;margin-bottom:4px}
 .tour-overlay .tour-tip-body{color:var(--text-2)}
