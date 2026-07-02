@@ -592,7 +592,8 @@ function renderComments(){
 function commentAction(id,act){ const c=review.comments.find(x=>x.id===id); if(!c) return;
   if(act==='edit'){ editingId=id; renderComments(); return; }
   if(act==='del'){ if(!confirm('Delete this comment?')) return; review=deleteComment(review,id); }
-  else if(act==='resolve'){ review=updateComment(review,id,{status: c.status==='resolved'?'open':'resolved'}); }
+  else if(act==='resolve'){ const reopening = c.status==='resolved';   // reopen restores 'submitted' (still submitted to the author), NOT 'open' (a draft the author hides)
+    review=updateComment(review,id,{status: reopening?'submitted':'resolved', reopened: reopening}); }
   markDirty(); renderComments(); buildNav(); paintHighlights(); }
 function editCard(c){ const w=document.createElement('div');
   w.innerHTML=`<textarea id="ebody" style="width:100%;border:.5px solid var(--accent);border-radius:6px;padding:7px;font:inherit;background:var(--bg);color:var(--text);min-height:54px;outline:none">${escapeHtml(c.body)}</textarea>

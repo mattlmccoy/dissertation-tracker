@@ -315,7 +315,7 @@ async function loadAdvisorComments(ch){
       let json = null;
       if (dev){ const r = await fetch(`./advisor/${a}/${ch}.json`); if (r.ok) json = await r.json(); }
       else { const t = tok(); if (!t) continue; json = (await getJson(t, `advisor/${a}/${ch}.json`)).json; }
-      (json?.comments||[]).forEach(c => { if (c.status!=='open' && c.status!=='resolved') advisorComments.push({ ...c, _advisor:a }); });   // hide unsubmitted drafts — the advisor's Submit is the gate
+      (json?.comments||[]).forEach(c => { if (c.status!=='open') advisorComments.push({ ...c, _advisor:a }); });   // hide only unsubmitted drafts (status 'open'); keep 'resolved' so it folds into the Resolved group, not vanishes
     } catch(e){}
   }
   if (!dev){ const t = tok(); if (t){ try { advNotesState = await loadAdvisorNotes(t); } catch(e){ advNotesState = { notes:{}, sha:null }; } } }
@@ -811,12 +811,24 @@ async function replyToComment(id, text){
     } else flash('Note added.');
   } catch(e){ flash('Reply saved; sync failed: '+e.message); }
 }
+let advResolvedOpen = false;
 function renderAdvisorSection(pane){
   if (!advisorComments.length) return;
+  const active = advisorComments.filter(c => !RESOLVED_STATES.has(c.status));
+  const resolved = advisorComments.filter(c => RESOLVED_STATES.has(c.status));
   const lbl = document.createElement('div'); lbl.className = 'lbl adv-lbl';
-  lbl.innerHTML = `<i class="ti ti-users" style="margin-right:5px"></i>FROM ADVISORS<span style="margin-left:auto">${advisorComments.length}</span>`;
+  lbl.innerHTML = `<i class="ti ti-users" style="margin-right:5px"></i>FROM ADVISORS<span style="margin-left:auto">${active.length}</span>`;
   pane.appendChild(lbl);
-  advisorComments.forEach(c => pane.appendChild(buildAdvCard(c)));
+  active.forEach(c => pane.appendChild(buildAdvCard(c)));
+  if (resolved.length){   // advisor-resolved comments fold into a collapsible group instead of vanishing
+    const grp = document.createElement('div'); grp.className = 'resolved-grp';
+    const head = document.createElement('button'); head.className = 'resolved-head';
+    head.innerHTML = `<i class="ti ti-chevron-${advResolvedOpen?'down':'right'}"></i><span>Resolved by advisor</span><span class="rcount">${resolved.length}</span>`;
+    const body = document.createElement('div'); body.className = 'resolved-body'; body.style.display = advResolvedOpen?'block':'none';
+    resolved.forEach(c => body.appendChild(buildAdvCard(c)));
+    head.onclick = () => { advResolvedOpen = !advResolvedOpen; body.style.display = advResolvedOpen?'block':'none'; head.querySelector('i').className = `ti ti-chevron-${advResolvedOpen?'down':'right'}`; };
+    grp.appendChild(head); grp.appendChild(body); pane.appendChild(grp);
+  }
 }
 // build one in-context advisor card with the full action set (rail is the primary action surface)
 function buildAdvCard(c){
