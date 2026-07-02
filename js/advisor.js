@@ -770,7 +770,7 @@ function openChapterMenu(){ const old=document.getElementById('chmenu'); if(old)
 function enterHome(){
   stopLiveSync();
   document.getElementById('nav').style.display='none'; document.getElementById('comments').style.display='none';
-  document.getElementById('topbar').innerHTML=`<strong style="font-size:16px;font-weight:600">Dissertation review · ${escapeHtml(ADVISOR.name)}</strong>
+  document.getElementById('topbar').innerHTML=`<span style="display:inline-flex;align-items:center;gap:8px"><svg width="20" height="20" viewBox="0 0 52 52" style="flex:0 0 auto"><rect x="3" y="3" width="46" height="46" rx="12" fill="#2c64c4"/><line x1="19" y1="14" x2="19" y2="38" stroke="#fff" stroke-width="3" stroke-linecap="round"/><line x1="26" y1="18" x2="38" y2="18" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".5"/><line x1="26" y1="26" x2="38" y2="26" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".5"/><circle cx="19" cy="26" r="4.6" fill="#fff"/></svg><strong style="font-size:16px;font-weight:600">Footnote</strong><span style="font-size:13px;color:var(--text-2)">· ${escapeHtml(ADVISOR.name)}</span></span>
      <button class="icbtn" id="btn-theme" style="margin-left:auto"><i class="ti ti-moon"></i></button>
      <button class="icbtn" id="btn-key" title="Access key"><i class="ti ti-key"></i></button>`;
   document.getElementById('btn-theme').onclick=()=>{ document.documentElement.classList.toggle('dark'); localStorage.setItem('theme',document.documentElement.classList.contains('dark')?'dark':'light'); };
