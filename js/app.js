@@ -1855,6 +1855,13 @@ async function openReleasePanel(){
     <div class="rel-sec">Advisors</div>
     <div style="font-size:12px;color:var(--text-3);margin-bottom:10px">Add a reviewer to create their portal and (with an email) send them an invite with their link + access key. The access key can read released chapters and write only review comments — keep it private.</div>
     <div id="adv-email-banner"></div>
+    <div style="display:flex;align-items:center;gap:8px;margin:0 0 12px">
+      <label style="font-size:12.5px;color:var(--text-2);white-space:nowrap">Notify me at</label>
+      <input id="notify-email" type="email" placeholder="you@example.com (twice-daily digest of advisor activity)"
+        style="flex:1;font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);outline:none">
+      <button class="btn" id="notify-save" style="padding:6px 12px">Save</button>
+      <span id="notify-stat" style="font-size:11.5px;color:var(--text-3)"></span>
+    </div>
     <div class="advadd" style="display:grid;grid-template-columns:1fr 1fr 140px auto;gap:8px;align-items:center;margin-bottom:12px">
       <input id="adv-name" placeholder="Full name" style="font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);outline:none">
       <input id="adv-email" type="email" placeholder="Email (to send the invite)" style="font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);outline:none">
@@ -2322,6 +2329,24 @@ gh variable set PORTAL_BASE --repo ${dataRepo}</pre>
   };
   document.getElementById('adv-add').onclick = addAdvisor;
   renderAdvList();
+  // Notify-me-at: stored in notify_config.json (data repo) — written with the everyday token,
+  // read by the notify workflow. No elevated scope needed (unlike Actions variables).
+  (async () => {
+    const inp = document.getElementById('notify-email'); if (!inp) return;
+    try { const { json } = await getJson(t, 'notify_config.json'); if (json && json.author_email) inp.value = json.author_email; } catch(e){}
+    const stat = document.getElementById('notify-stat');
+    document.getElementById('notify-save').onclick = async () => {
+      const val = inp.value.trim();
+      stat.textContent = 'Saving…';
+      try {
+        const { json, sha } = await getJson(t, 'notify_config.json').catch(() => ({ json:null, sha:null }));
+        const cfg = json && typeof json === 'object' ? json : {};
+        cfg.author_email = val;
+        await putJson(t, 'notify_config.json', cfg, sha, `notify: set author email`);
+        stat.textContent = val ? 'Saved — digests will send twice daily.' : 'Cleared — digests off.';
+      } catch(e){ stat.textContent = 'Failed: ' + e.message; }
+    };
+  })();
   document.getElementById('rel-save').onclick = async () => {
     advs.forEach(a => { rel[a].released = [...document.querySelectorAll(`input[data-a="${a}"]:checked`)].map(x => x.dataset.ch);
       rel[a].responses_released = !!document.querySelector(`input[data-resp="${a}"]`)?.checked; });
