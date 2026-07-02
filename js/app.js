@@ -1494,7 +1494,7 @@ function enterHome(){
      <button class="btn" id="btn-token" style="padding:6px 12px${tok()?'':';color:var(--warn);border-color:var(--warn)'}" title="Your GitHub access token"><i class="ti ti-key"></i>${tok()?'Token':'Add token'}</button>
      <button class="btn" id="btn-outline" style="padding:6px 12px" title="Proposed outline (what advisors see)"><i class="ti ti-list-tree"></i>Outline</button>
      <button class="btn" id="btn-export" style="padding:6px 12px" title="Printable response to advisor comments"><i class="ti ti-file-text"></i>Response</button>
-     <button class="btn" id="btn-releases" style="padding:6px 12px"><i class="ti ti-users"></i>Advisor releases</button>
+     <button class="btn" id="btn-releases" style="padding:6px 12px"><i class="ti ti-users"></i>Reviewers</button>
      <button class="icbtn" id="btn-tour" title="Take the tour"><i class="ti ti-help-circle"></i></button>
      <a class="icbtn" href="./index.html" title="Back to dashboard"><i class="ti ti-layout-dashboard"></i></a>
      <button class="icbtn" id="btn-theme"><i class="ti ti-moon"></i></button>`;
@@ -1856,7 +1856,7 @@ function openMoreMenu(){
   const hasTok = !!tok();
   const autoOff = tourSeen('tour-owner-v1');   // true = tour won't auto-show for returning users
   menu.innerHTML = `
-    <div class="mmi" data-act="release"><i class="ti ti-users"></i>Release to advisors…</div>
+    <div class="mmi" data-act="release"><i class="ti ti-users"></i>Reviewers…</div>
     <div class="mmi" data-act="help"><i class="ti ti-keyboard"></i>Buttons & shortcuts</div>
     <div class="mmi" data-act="token"><i class="ti ti-key"></i>Access token${hasTok?' <span style="color:var(--success);font-size:11px;margin-left:auto">connected</span>':' <span style="color:var(--warn);font-size:11px;margin-left:auto">not set</span>'}</div>
     <div class="mmi" data-act="tour"><i class="ti ti-help-circle"></i>Take the setup tour</div>
@@ -1885,7 +1885,7 @@ async function openReleasePanel(){
   document.getElementById('nav').style.display = 'none';
   document.getElementById('comments').style.display = 'none';
   document.getElementById('topbar').innerHTML =
-    `<strong style="font-size:16px;font-weight:600"><i class="ti ti-users" style="margin-right:7px"></i>Advisor releases</strong>
+    `<strong style="font-size:16px;font-weight:600"><i class="ti ti-users" style="margin-right:7px"></i>Reviewers</strong>
      <button class="btn" id="rel-close" style="margin-left:auto"><i class="ti ti-arrow-left"></i>Back to chapters</button>`;
   document.getElementById('rel-close').onclick = enterHome;
   read.innerHTML = `<div class="rel-page"><div id="rel-body" style="color:var(--text-3)">Loading…</div></div>`;
@@ -1941,14 +1941,6 @@ async function openReleasePanel(){
   document.getElementById('rel-body').innerHTML = `
     <div class="rel-sec">Advisors</div>
     <div style="font-size:12px;color:var(--text-3);margin-bottom:10px">Add a reviewer to create their portal and (with an email) send them an invite with their link + access key. The access key can read released chapters and write only review comments — keep it private.</div>
-    <div id="adv-email-banner"></div>
-    <div style="display:flex;align-items:center;gap:8px;margin:0 0 12px">
-      <label style="font-size:12.5px;color:var(--text-2);white-space:nowrap">Notify me at</label>
-      <input id="notify-email" type="email" placeholder="you@example.com (twice-daily digest of advisor activity)"
-        style="flex:1;font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);outline:none">
-      <button class="btn" id="notify-save" style="padding:6px 12px">Save</button>
-      <span id="notify-stat" style="font-size:11.5px;color:var(--text-3)"></span>
-    </div>
     <div class="advadd" style="display:grid;grid-template-columns:1fr 1fr 140px auto;gap:8px;align-items:center;margin-bottom:12px">
       <input id="adv-name" placeholder="Full name" style="font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);outline:none">
       <input id="adv-email" type="email" placeholder="Email (to send the invite)" style="font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);outline:none">
@@ -1968,7 +1960,17 @@ async function openReleasePanel(){
           : advisorUrl(a, rel[a].name);
         return `<div><b>${escapeHtml(rel[a].name||a)}</b> → <code>${escapeHtml(url)}</code></div>`;
       }).join('')}</div>
-    <div class="rel-sec" style="margin-top:26px">Comments received from advisors</div>${inboxHtml}`;
+    <div class="rel-sec" style="margin-top:26px">Comments received from advisors</div>${inboxHtml}
+    <div class="rel-sec" style="margin-top:34px;padding-top:10px;border-top:1px solid var(--border)"><i class="ti ti-settings" style="margin-right:6px"></i>Settings</div>
+    <div style="font-size:12px;color:var(--text-3);margin-bottom:12px">Email, notifications, and access — how the reviewer system is configured, separate from managing reviewers. (Will move to its own page.)</div>
+    <div id="adv-email-banner"></div>
+    <div style="display:flex;align-items:center;gap:8px;margin:0 0 12px">
+      <label style="font-size:12.5px;color:var(--text-2);white-space:nowrap">Notify me at</label>
+      <input id="notify-email" type="email" placeholder="you@example.com (twice-daily digest of advisor activity)"
+        style="flex:1;font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);outline:none">
+      <button class="btn" id="notify-save" style="padding:6px 12px">Save</button>
+      <span id="notify-stat" style="font-size:11.5px;color:var(--text-3)"></span>
+    </div>`;
   const refresh = () => openReleasePanel();
   // panel is overview-only: read-gate + batch send + open-in-context. All in-place (no full re-fetch).
   const syncAdvHeader = a => {
@@ -2044,8 +2046,10 @@ async function openReleasePanel(){
       // Keep a way back in — the owner can switch providers or re-test at any time.
       box.innerHTML = `<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-3);border:.5px solid var(--border);border-radius:8px;padding:8px 11px;margin-bottom:12px">
         <i class="ti ti-circle-check" style="color:var(--success)"></i> Email invites are set up.
-        <button id="adv-email-change" class="btn" style="padding:3px 10px;font-size:11px;margin-left:auto">Change email / re-test</button></div>`;
+        <button id="adv-email-test" class="btn" style="padding:3px 10px;font-size:11px;margin-left:auto"><i class="ti ti-send"></i>Send test email</button>
+        <button id="adv-email-change" class="btn" style="padding:3px 10px;font-size:11px">Change email / re-test</button></div>`;
       const cb = document.getElementById('adv-email-change'); if (cb) cb.onclick = openConnectForm;
+      const tb = document.getElementById('adv-email-test'); if (tb) tb.onclick = openTestSend;
       return;
     }
     const dataRepo = 'mattlmccoy/dissertation-tracker-data';   // where the invite workflow + secrets live
@@ -2092,6 +2096,47 @@ gh variable set PORTAL_BASE --repo ${dataRepo}</pre>
     const cbtn = document.getElementById('adv-email-connect');
     if (cbtn) cbtn.onclick = openConnectForm;
   };
+  // Direct "send a test email" — a fast path that reuses the invite workflow without walking the
+  // full connect wizard. Still needs a workflow-scoped token (Actions:write) to dispatch.
+  function openTestSend(){
+    const box = document.getElementById('adv-email-banner'); if (!box) return;
+    box.innerHTML = `
+      <div style="border:.5px solid var(--border);border-radius:9px;padding:12px 13px;margin-bottom:12px">
+        <div style="font-weight:600;font-size:13px;margin-bottom:8px"><i class="ti ti-send" style="margin-right:5px"></i>Send a test email</div>
+        <div style="display:grid;gap:8px">
+          <input id="ts-to" type="email" placeholder="Recipient email" style="${inputCss}">
+          <input id="ts-tok" type="password" placeholder="GitHub token with workflow scope" style="${inputCss}">
+          <div style="font-size:11px;color:var(--text-3);line-height:1.5">Need one? <a href="${TOKEN_URL}" target="_blank" rel="noopener">Generate a token</a> (repo + workflow) and paste it. It is used once and not stored.</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button id="ts-send" class="btn btn-primary" style="padding:5px 13px;font-size:12px">Send test</button>
+            <button id="ts-cancel" class="btn" style="padding:5px 11px;font-size:12px">Cancel</button>
+            <span id="ts-stat" style="font-size:11.5px;color:var(--text-3)"></span>
+          </div>
+        </div>
+      </div>`;
+    document.getElementById('ts-cancel').onclick = renderEmailBanner;
+    document.getElementById('ts-send').onclick = async () => {
+      const to = (document.getElementById('ts-to').value || '').trim();
+      const etok = (document.getElementById('ts-tok').value || '').trim();
+      const stat = document.getElementById('ts-stat');
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)){ stat.textContent = 'Enter a valid recipient email.'; return; }
+      if (!etok){ stat.textContent = 'Paste a workflow-scoped token.'; return; }
+      try {
+        stat.textContent = 'Checking token…';
+        const pk = await checkAccess(etok);
+        if (!pk){ stat.innerHTML = 'That token is missing <b>Actions</b> (workflow) access — regenerate it with the <b>repo</b> and <b>workflow</b> scopes.'; return; }
+        stat.textContent = 'Dispatching test…';
+        const before = (await latestRun(etok))?.id || 0;
+        await dispatchInvite(etok, to);
+        const deadline = Date.now() + 90000; let run = null;
+        while (Date.now() < deadline){ await new Promise(r => setTimeout(r, 4000)); run = await latestRun(etok); if (run && run.id !== before && run.status === 'completed') break; }
+        if (!run || run.status !== 'completed'){ stat.textContent = 'Dispatched, but the run did not finish in time. Check back in a minute.'; return; }
+        const { json } = await getJson(tok(), 'advisors.json').catch(() => ({ json:null }));
+        if (run.conclusion === 'success' && json?.email_test?.ok){ flash('✅ Test email sent to ' + to); renderEmailBanner(); }
+        else { stat.innerHTML = 'Test failed: <code>' + escapeHtml(json?.email_test?.error || ('run: ' + run.conclusion)) + '</code>'; }
+      } catch(e){ stat.textContent = isScopeError(e) ? 'Token lacks Actions access — regenerate with repo + workflow.' : ('Failed: ' + e.message); }
+    };
+  }
   const inputCss = 'width:100%;font:inherit;font-size:12.5px;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text)';
   // ---- Connect email: write SMTP secrets to the data repo + real test send (owner-only) ----
   // TOKEN_URL: pre-scoped classic token so the owner just clicks Generate (repo→secrets, workflow→dispatch).
