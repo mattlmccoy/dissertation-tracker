@@ -92,3 +92,11 @@ test('partitionByDecision is staged-only and counts already-queued separately', 
   assert.deepEqual(p.undecided, ['d']);
   assert.deepEqual(p.queued, ['q']);
 });
+
+test('addComment defaults to open but honors an explicit status', () => {
+  let r = newReview('ch_modeling','abc');
+  r = addComment(r, { tag:'wording', body:'draft', anchor:{quote:'q'} });
+  assert.equal(r.comments[0].status, 'open');                 // default unchanged
+  r = addComment(r, { tag:'wording', body:'live', anchor:{quote:'q2'}, status:'submitted' });
+  assert.equal(r.comments[1].status, 'submitted');            // explicit status wins
+});

@@ -5,7 +5,7 @@ export const newReview = (chapter, builtFrom) =>
 export const addComment = (r, c) => ({ ...r, comments:[...r.comments, {
   id: nid(), page:c.page, kind:c.kind||'text',
   anchor:{ quote:c.anchor?.quote||'', synctex:c.anchor?.synctex||null, rects:c.anchor?.rects||[], section:c.anchor?.section||'', figure:c.anchor?.figure||null, confirmed:!!c.anchor?.confirmed },
-  tag:c.tag||'other', body:c.body||'', status:'open',
+  tag:c.tag||'other', body:c.body||'', status:c.status||'open',
   author:c.author||null,   // who left it: null/'matt' (owner) or an advisor id (e.g. 'CJS')
   edit:c.edit||null,   // verbatim suggestion: { op:'replace'|'insert'|'delete', find, replacement, position? }
   claude:{ branch:null, commit:null, response:null, resolved_line:null, ts:null },
