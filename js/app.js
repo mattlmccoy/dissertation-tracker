@@ -1900,7 +1900,7 @@ async function openReleasePanel(){
   const advHeadHtml = a => { const unread = unreadOf(a); const pr = pres[a]||{};
     const active = pr.lastActive ? (Date.now()-new Date(pr.lastActive).getTime())/1000 < 120 : false;
     const presence = (pr.drafts>0 || pr.lastActive)
-      ? `<span class="chip" title="Unsubmitted drafts — hidden from you until the reviewer clicks Submit" style="background:${active?'var(--success-bg)':'var(--bg-3)'};color:${active?'var(--success)':'var(--text-3)'}">${active?'<i class="ti ti-pencil" style="font-size:11px;margin-right:3px"></i>active now':`active ${relTime(pr.lastActive)}`}${pr.drafts>0?` · ${pr.drafts} drafting`:''}</span> `
+      ? `<span class="chip" title="When this reviewer was last active" style="background:${active?'var(--success-bg)':'var(--bg-3)'};color:${active?'var(--success)':'var(--text-3)'}">${active?'<i class="ti ti-pencil" style="font-size:11px;margin-right:3px"></i>active now':`active ${relTime(pr.lastActive)}`}</span> `
       : '';
     return `${presence}${unread?`<span class="chip" style="background:var(--warn-bg);color:var(--warn)">${unread} unread</span> <button class="btn rel-readall" data-a="${a}" style="padding:2px 9px;font-size:11.5px"><i class="ti ti-checks"></i>Mark all read</button>`:`<span class="chip" style="background:var(--success-bg);color:var(--success)"><i class="ti ti-check" style="font-size:12px"></i> all read</span>`}`; };
   const cmtRow = (a, chapter, c) => `<div class="rel-row${c.read?' is-read':''}" data-a="${a}" data-ch="${chapter}" data-cid="${c.id}" data-q="${escapeHtml((c.anchor?.quote||'').slice(0,60))}">
